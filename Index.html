@@ -1,1 +1,567 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SolveFlow V0.3 - Résolution Structurée</title>
+    <style>
+        :root {
+            --bg-main: #0f172a;
+            --bg-sidebar: #1e293b;
+            --bg-card: #1e293b;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
 
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        sidebar {
+            width: 260px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo-area {
+            padding: 20px;
+            font-size: 1.25rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo-area span {
+            background: var(--accent);
+            color: white;
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .nav-links {
+            list-style: none;
+            padding: 20px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .nav-links li {
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+
+        .nav-links li:hover, .nav-links li.active {
+            background-color: var(--accent);
+            color: white;
+        }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header.topbar {
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border);
+            background-color: var(--bg-main);
+        }
+
+        header.topbar h1 {
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+        }
+
+        header.topbar p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .content-area {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .content-area.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Chat UI */
+        .chat-container {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            display: flex;
+            gap: 12px;
+            max-width: 80%;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .msg-bubble {
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+
+        .message.bot .msg-bubble {
+            background-color: var(--border);
+            color: var(--text-main);
+        }
+
+        .message.user .msg-bubble {
+            background-color: var(--accent);
+            color: white;
+        }
+
+        .chat-input-area {
+            padding: 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            background: var(--bg-main);
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-main);
+            outline: none;
+        }
+
+        .chat-input-area button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .chat-input-area button:hover {
+            background: var(--accent-hover);
+        }
+
+        /* Diagnostic UI */
+        .diagnostic-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1000px;
+            margin-bottom: 20px;
+        }
+
+        .diag-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .diag-card h3 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .diag-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .risks-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 1000px;
+            margin-bottom: 20px;
+        }
+
+        .risks-tags {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .risk-tag {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        /* Kanban Board */
+        .kanban-board {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 15px;
+            flex: 1;
+            overflow-x: auto;
+        }
+
+        .kanban-column {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .kanban-header {
+            padding: 15px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255,255,255,0.02);
+        }
+
+        .kanban-cards {
+            padding: 15px;
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .kanban-card {
+            background: var(--bg-main);
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .btn-action {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            width: fit-content;
+        }
+        .btn-action:hover { opacity: 0.9; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar Navigation -->
+    <sidebar>
+        <div class="logo-area">
+            SolveFlow <span>V0.3</span>
+        </div>
+        <ul class="nav-links">
+            <li onclick="switchTab(0)">1. Analyse IA</li>
+            <li class="active" onclick="switchTab(1)">2. Assistant Conversationnel</li>
+            <li onclick="switchTab(2)">3. Diagnostic</li>
+            <li onclick="switchTab(3)">4. Kanban Board</li>
+            <li onclick="switchTab(4)">5. Calendrier</li>
+            <li onclick="switchTab(5)">6. Dashboard</li>
+        </ul>
+    </sidebar>
+
+    <!-- Main Section -->
+    <main>
+        <!-- Topbar dynamic title -->
+        <header class="topbar">
+            <h1 id="page-title">Assistant Conversationnel</h1>
+            <p id="page-desc">Affinement itératif de votre stratégie de résolution.</p>
+        </header>
+
+        <!-- TAB 1: Analyse IA -->
+        <div class="content-area" id="tab-0">
+            <h2>Analyse Initiale du Problème</h2>
+            <p style="color:var(--text-muted); margin-top:10px;">Définissez le cadre général de votre problématique avant de lancer l'assistant.</p>
+        </div>
+
+        <!-- TAB 2: Assistant Conversationnel -->
+        <div class="content-area active" id="tab-1">
+            <div class="chat-container">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="message bot">
+                        <div class="msg-bubble">Décris-moi ton problème en détail.</div>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="user-input" placeholder="Répondre à l'IA..." onkeypress="handleKeyPress(event)">
+                    <button onclick="sendMessage()">➤</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: Diagnostic -->
+        <div class="content-area" id="tab-2">
+            <div class="diagnostic-grid">
+                <div class="diag-card">
+                    <h3>Problème Identifié</h3>
+                    <p id="diag-problem-text">Analyse en cours...</p>
+                </div>
+                <div class="diag-card">
+                    <h3>Objectif Principal</h3>
+                    <p id="diag-objective-text">Résolution ciblée et validée.</p>
+                </div>
+            </div>
+            <div class="risks-box">
+                <h3>Risques et Contraintes Identifiés</h3>
+                <div class="risks-tags" id="risks-container">
+                    <span class="risk-tag">Temps</span>
+                    <span class="risk-tag">Sécurité / Technique</span>
+                    <span class="risk-tag">Dépendances</span>
+                </div>
+            </div>
+            <button class="btn-action" onclick="validateDiagnostic()">Valider et Générer le Kanban</button>
+        </div>
+
+        <!-- TAB 4: Kanban Board -->
+        <div class="content-area" id="tab-3">
+            <div class="kanban-board">
+                <div class="kanban-column">
+                    <div class="kanban-header">BACKLOG</div>
+                    <div class="kanban-cards" id="kb-backlog"></div>
+                </div>
+                <div class="kanban-column">
+                    <div class="kanban-header">SPRINT</div>
+                    <div class="kanban-cards" id="kb-sprint"></div>
+                </div>
+                <div class="kanban-column">
+                    <div class="kanban-header">DOING</div>
+                    <div class="kanban-cards" id="kb-doing"></div>
+                </div>
+                <div class="kanban-column">
+                    <div class="kanban-header">DONE</div>
+                    <div class="kanban-cards" id="kb-done"></div>
+                </div>
+                <div class="kanban-column">
+                    <div class="kanban-header">INCREMENT</div>
+                    <div class="kanban-cards" id="kb-increment"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: Calendrier -->
+        <div class="content-area" id="tab-4">
+            <h2>Planification temporelle des actions.</h2>
+        </div>
+
+        <!-- TAB 6: Dashboard -->
+        <div class="content-area" id="tab-5">
+            <h2>Indicateurs de suivi global.</h2>
+        </div>
+    </main>
+
+    <script>
+        const titles = [
+            { title: "Analyse IA", desc: "Cadrage initial du projet." },
+            { title: "Assistant Conversationnel", desc: "Affinement itératif de votre stratégie de résolution." },
+            { title: "Diagnostic & Analyse des Risques", desc: "Synthèse générée par l'IA avant planification agile." },
+            { title: "Tableau Kanban Agile", desc: "Backlog, Sprint en cours et Incréments validés par l'IA." },
+            { title: "Calendrier", desc: "Échéancier des tâches." },
+            { title: "Dashboard", desc: "Suivi des performances et de l'avancement." }
+        ];
+
+        let userProblem = "Problème non spécifié";
+        let userObjective = "Résoudre le problème efficacement";
+        let chatStep = 0;
+
+        function switchTab(index) {
+            const tabs = document.querySelectorAll('.content-area');
+            const navItems = document.querySelectorAll('.nav-links li');
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            navItems.forEach(n => n.classList.remove('active'));
+
+            tabs[index].classList.add('active');
+            navItems[index].classList.add('active');
+
+            document.getElementById('page-title').innerText = titles[index].title;
+            document.getElementById('page-desc').innerText = titles[index].desc;
+
+            if (index === 2) {
+                updateDiagnosticView();
+            }
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function sendMessage() {
+            const inputField = document.getElementById('user-input');
+            const text = inputField.value.trim();
+            if (!text) return;
+
+            appendMessage(text, 'user');
+            inputField.value = '';
+
+            setTimeout(() => {
+                processAIResponse(text);
+            }, 600);
+        }
+
+        function appendMessage(text, sender) {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender}`;
+            msgDiv.innerHTML = `<div class="msg-bubble">${text}</div>`;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function processAIResponse(userInput) {
+            let botReply = "";
+
+            if (chatStep === 0) {
+                userProblem = userInput;
+                botReply = "Quel est ton objectif principal pour résoudre cette situation ?";
+                chatStep = 1;
+            } else if (chatStep === 1) {
+                userObjective = userInput;
+                botReply = `Parfait ! Le problème "${userProblem}" est enregistré avec l'objectif : "${userObjective}". Passons au diagnostic. Clique sur l'onglet '3. Diagnostic' pour voir la synthèse.`;
+                chatStep = 2;
+            } else {
+                botReply = "Le diagnostic est prêt. Tu peux le consulter dans l'onglet dédié pour générer ton plan d'action agile.";
+            }
+
+            appendMessage(botReply, 'bot');
+        }
+
+        function updateDiagnosticView() {
+            document.getElementById('diag-problem-text').innerText = userProblem;
+            document.getElementById('diag-objective-text').innerText = userObjective;
+
+            const risksContainer = document.getElementById('risks-container');
+            if (userProblem.toLowerCase().includes('électricité') || userProblem.toLowerCase().includes('courant')) {
+                risksContainer.innerHTML = `
+                    <span class="risk-tag">Sécurité Électrique</span>
+                    <span class="risk-tag">Outillage Nécessaire</span>
+                    <span class="risk-tag">Risque de Coupure Totale</span>
+                `;
+            } else {
+                risksContainer.innerHTML = `
+                    <span class="risk-tag">Temps d'exécution</span>
+                    <span class="risk-tag">Ressources</span>
+                    <span class="risk-tag">Dépendances techniques</span>
+                `;
+            }
+        }
+
+        function validateDiagnostic() {
+            const backlog = document.getElementById('kb-backlog');
+            const sprint = document.getElementById('kb-sprint');
+            const doing = document.getElementById('kb-doing');
+            const done = document.getElementById('kb-done');
+            const increment = document.getElementById('kb-increment');
+
+            if (userProblem.toLowerCase().includes('électricité') || userProblem.toLowerCase().includes('courant')) {
+                backlog.innerHTML = `
+                    <div class="kanban-card">Identifier les pièces impactées</div>
+                    <div class="kanban-card">Vérifier les appareils branchés</div>
+                `;
+                sprint.innerHTML = `
+                    <div class="kanban-card">Inspecter le tableau électrique principal</div>
+                    <div class="kanban-card">Tester le disjoncteur général et divisionnaire</div>
+                `;
+                doing.innerHTML = `<div class="kanban-card">Localiser le fusible défectueux</div>`;
+                done.innerHTML = `<div class="kanban-card">Vérification de l'arrivée secteur</div>`;
+                increment.innerHTML = `<div class="kanban-card">Électricité rétablie</div>`;
+            } else {
+                backlog.innerHTML = `
+                    <div class="kanban-card">Analyser les exigences</div>
+                    <div class="kanban-card">Structurer les étapes</div>
+                `;
+                sprint.innerHTML = `
+                    <div class="kanban-card">Créer le plan d'action</div>
+                    <div class="kanban-card">Valider les ressources</div>
+                `;
+                doing.innerHTML = `<div class="kanban-card">Exécution de la première phase</div>`;
+                done.innerHTML = `<div class="kanban-card">Cadrage initial validé</div>`;
+                increment.innerHTML = `<div class="kanban-card">MVP fonctionnel</div>`;
+            }
+
+            switchTab(3); // Basculer vers le Kanban
+        }
+    </script>
+</body>
+</html>

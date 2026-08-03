@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SolveFlow V0.3 - Assistant de Résolution Intelligent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-brain-circuit"></i>
+                <span>SolveFlow</span>
+                <span class="version-tag">V0.3</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#screen-1" class="nav-item active" onclick="switchScreen('screen-1', this)"><i class="fa-solid fa-wand-magic-sparkles"></i> <span>1. Analyse IA</span></a>
+                <a href="#screen-2" class="nav-item" onclick="switchScreen('screen-2', this)"><i class="fa-solid fa-comments"></i> <span>2. Assistant Conversation</span></a>
+                <a href="#screen-3" class="nav-item" onclick="switchScreen('screen-3', this)"><i class="fa-solid fa-stethoscope"></i> <span>3. Diagnostic</span></a>
+                <a href="#screen-4" class="nav-item" onclick="switchScreen('screen-4', this)"><i class="fa-solid fa-columns"></i> <span>4. Kanban Board</span></a>
+                <a href="#screen-5" class="nav-item" onclick="switchScreen('screen-5', this)"><i class="fa-solid fa-calendar-days"></i> <span>5. Calendrier</span></a>
+                <a href="#screen-6" class="nav-item" onclick="switchScreen('screen-6', this)"><i class="fa-solid fa-chart-pie"></i> <span>6. Dashboard</span></a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="ai-status">
+                    <span class="pulse"></span> IA Active & Prête
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Écran 1 : Accueil / Problème -->
+            <section id="screen-1" class="screen active">
+                <div class="hero-card">
+                    <div class="badge-ai">Assistant SolveFlow V0.3</div>
+                    <h1>Quel problème souhaitez-vous résoudre ?</h1>
+                    <p class="subtitle">Décrivez votre ambition ou votre blocage technique. L'IA décomposera, structurera et planifiera votre projet.</p>
+                    <div class="input-group">
+                        <textarea id="problem-input" rows="3" placeholder="Ex: Créer une application mobile de gestion de stock avec synchronisation cloud..."></textarea>
+                        <button class="btn-primary" onclick="startAnalysis()">
+                            <i class="fa-solid fa-bolt"></i> Commencer l'analyse
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Écran 2 : Conversation avec l'IA -->
+            <section id="screen-2" class="screen">
+                <div class="screen-header">
+                    <h2><i class="fa-solid fa-comments"></i> Conversation avec l’IA</h2>
+                    <p>Affinement itératif de votre stratégie de résolution.</p>
+                </div>
+                <div class="chat-container">
+                    <div class="chat-message ai">
+                        <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                        <div class="bubble">Décris-moi ton problème en détail.</div>
+                    </div>
+                    <div class="chat-message user">
+                        <div class="bubble" id="user-problem-echo">Je souhaite lancer un MVP performant et sécurisé.</div>
+                        <div class="avatar"><i class="fa-solid fa-user"></i></div>
+                    </div>
+                    <div class="chat-message ai">
+                        <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                        <div class="bubble">Quel est ton objectif principal ?</div>
+                    </div>
+                    <div class="chat-message user">
+                        <div class="bubble">Publier une version testable sous 4 semaines.</div>
+                        <div class="avatar"><i class="fa-solid fa-user"></i></div>
+                    </div>
+                    <div class="chat-message ai">
+                        <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                        <div class="bubble">Quelle est la date limite et combien de temps peux-tu y consacrer par semaine ?</div>
+                    </div>
+                </div>
+                <div class="chat-input-bar">
+                    <input type="text" placeholder="Répondre à l'IA..." id="chat-reply-input">
+                    <button class="btn-secondary" onclick="sendChatReply()"><i class="fa-solid fa-paper-plane"></i></button>
+                </div>
+            </section>
+
+            <!-- Écran 3 : Diagnostic -->
+            <section id="screen-3" class="screen">
+                <div class="screen-header">
+                    <h2><i class="fa-solid fa-stethoscope"></i> Diagnostic & Analyse des Risques</h2>
+                    <p>Synthèse générée par l'IA avant planification agile.</p>
+                </div>
+                <div class="diagnostic-grid">
+                    <div class="diag-card">
+                        <h3><i class="fa-solid fa-bullseye"></i> Problème</h3>
+                        <p id="diag-problem-text">Créer une application moderne et évolutive.</p>
+                    </div>
+                    <div class="diag-card">
+                        <h3><i class="fa-solid fa-flag-checkered"></i> Objectif</h3>
+                        <p id="diag-objective-text">Publier un MVP fonctionnel.</p>
+                    </div>
+                    <div class="diag-card full-width">
+                        <h3><i class="fa-solid fa-triangle-exclamation"></i> Risques Identifiés</h3>
+                        <div class="risk-tags">
+                            <span class="risk-tag"><i class="fa-solid fa-clock"></i> Temps</span>
+                            <span class="risk-tag"><i class="fa-solid fa-wallet"></i> Budget</span>
+                            <span class="risk-tag"><i class="fa-solid fa-graduation-cap"></i> Compétences</span>
+                            <span class="risk-tag"><i class="fa-solid fa-network-wired"></i> Dépendances</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="action-footer">
+                    <button class="btn-primary" onclick="switchScreen('screen-4', document.querySelectorAll('.nav-item')[3])">
+                        <i class="fa-solid fa-check"></i> Valider et Générer le Kanban
+                    </button>
+                </div>
+            </section>
+
+            <!-- Écran 4 : Kanban -->
+            <section id="screen-4" class="screen">
+                <div class="screen-header">
+                    <h2><i class="fa-solid fa-columns"></i> Tableau Kanban Agile</h2>
+                    <p>Backlog, Sprint en cours et Incréments validés par l'IA.</p>
+                </div>
+                <div class="kanban-board">
+                    <div class="kanban-col">
+                        <div class="col-header backlog">Backlog</div>
+                        <div class="col-tasks" id="col-backlog">
+                            {% for task in data.columns.backlog %}
+                            <div class="task-card" draggable="true">{{ task }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="kanban-col">
+                        <div class="col-header sprint">Sprint</div>
+                        <div class="col-tasks" id="col-sprint">
+                            {% for task in data.columns.sprint %}
+                            <div class="task-card" draggable="true">{{ task }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="kanban-col">
+                        <div class="col-header doing">Doing</div>
+                        <div class="col-tasks" id="col-doing">
+                            {% for task in data.columns.doing %}
+                            <div class="task-card active-task" draggable="true">{{ task }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="kanban-col">
+                        <div class="col-header done">Done</div>
+                        <div class="col-tasks" id="col-done">
+                            {% for task in data.columns.done %}
+                            <div class="task-card completed" draggable="true">{{ task }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="kanban-col">
+                        <div class="col-header increment">Increment</div>
+                        <div class="col-tasks" id="col-increment">
+                            {% for task in data.columns.increment %}
+                            <div class="task-card increment-task" draggable="true">{{ task }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Écran 5 : Calendrier -->
+            <section id="screen-5" class="screen">
+                <div class="screen-header">
+                    <h2><i class="fa-solid fa-calendar-days"></i> Calendrier Hebdomadaire</h2>
+                    <p>Planification intelligente alignée sur vos disponibilités.</p>
+                </div>
+                <div class="calendar-grid">
+                    {% for item in data.calendar %}
+                    <div class="calendar-day-card">
+                        <div class="day-name">{{ item.day }}</div>
+                        <div class="day-task {% if item.done %}done{% endif %}">
+                            <i class="fa-solid {% if item.done %}fa-circle-check{% else %}fa-clock{% endif %}"></i>
+                            <span>{{ item.task }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <!-- Écran 6 : Dashboard -->
+            <section id="screen-6" class="screen">
+                <div class="screen-header">
+                    <h2><i class="fa-solid fa-chart-pie"></i> Tableau de Bord & Métriques IA</h2>
+                    <p>Suivi en temps réel de la vélocité et des performances du projet.</p>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-title">Projet Global</div>
+                        <div class="metric-value">67 %</div>
+                        <div class="progress-bar"><div class="fill" style="width: 67%;"></div></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Sprint en cours</div>
+                        <div class="metric-value">80 %</div>
+                        <div class="progress-bar"><div class="fill" style="width: 80%;"></div></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Backlog</div>
+                        <div class="metric-value">34 <span class="unit">tâches</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">En cours (Doing)</div>
+                        <div class="metric-value">2</div>
+                    </div>
+                    <div class="metric-card alert">
+                        <div class="metric-title">Retard détecté</div>
+                        <div class="metric-value">1 <span class="unit">tâche</span></div>
+                    </div>
+                    <div class="metric-card success">
+                        <div class="metric-title">Temps gagné (IA)</div>
+                        <div class="metric-value">4 h</div>
+                    </div>
+                </div>
+
+                <!-- AI Assistant Widget Mock -->
+                <div class="ai-assistant-banner">
+                    <div class="ai-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                    <div class="ai-text">
+                        <h4>Assistant IA proactif</h4>
+                        <p>« Cette tâche est bloquée depuis 5 jours. Souhaitez-vous que je la redécoupe ou que je la reporte automatiquement au prochain sprint ? »</p>
+                    </div>
+                    <button class="btn-primary-sm" onclick="alert('IA: Sprint réorganisé avec succès !')">Réorganiser</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

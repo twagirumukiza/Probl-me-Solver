@@ -219,6 +219,7 @@
   .card{
     background:var(--panel-2);border:1px solid var(--border-soft);border-radius:8px;
     padding:11px 12px;cursor:grab;font-size:12.5px;position:relative;
+    touch-action:none;user-select:none;-webkit-user-select:none;
   }
   .card:active{cursor:grabbing;}
   .card .stamp-id{font-family:var(--mono);font-size:9.5px;color:var(--text-dim);letter-spacing:.04em;}
@@ -1089,21 +1090,11 @@ function renderKanban(){
   }).join('');
 
   board.querySelectorAll('.card').forEach(c=>{
-    c.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', c.dataset.id); });
+    c.addEventListener('pointerdown', onCardPointerDown);
     c.querySelector('.del')?.addEventListener('click', (e)=>{
       e.stopPropagation();
       state.tasks = state.tasks.filter(t=>t.id!==c.dataset.id);
       renderKanban(); saveState();
-    });
-  });
-  board.querySelectorAll('.col-body').forEach(cb=>{
-    cb.addEventListener('dragover', e=>{ e.preventDefault(); cb.classList.add('dragover'); });
-    cb.addEventListener('dragleave', ()=> cb.classList.remove('dragover'));
-    cb.addEventListener('drop', e=>{
-      e.preventDefault(); cb.classList.remove('dragover');
-      const id = e.dataTransfer.getData('text/plain');
-      const t = state.tasks.find(x=>x.id===id);
-      if(t){ t.status = cb.dataset.col; renderKanban(); saveState(); renderTrail(); }
     });
   });
 
@@ -1123,10 +1114,117 @@ function renderKanban(){
   else { tag.style.display='none'; }
 }
 
+// ---------------- Drag & drop via Pointer Events (mouse, tactile, stylet) ----------------
+let dragState = null;
+const DRAG_THRESHOLD = 6;
+
+function onCardPointerDown(e){
+  if(e.target.closest('.del')) return;
+  if(e.button !== undefined && e.button !== 0 && e.pointerType==='mouse') return;
+  const card = e.currentTarget;
+  dragState = {
+    taskId: card.dataset.id,
+    originEl: card,
+    pointerId: e.pointerId,
+    startX: e.clientX, startY: e.clientY,
+    dragging:false,
+    ghostEl:null, currentColBody:null
+  };
+}
+
+function beginDrag(clientX, clientY){
+  const card = dragState.originEl;
+  const rect = card.getBoundingClientRect();
+  dragState.offsetX = dragState.startX - rect.left;
+  dragState.offsetY = dragState.startY - rect.top;
+  const ghost = card.cloneNode(true);
+  ghost.classList.add('drag-ghost');
+  ghost.style.position='fixed';
+  ghost.style.width = rect.width+'px';
+  ghost.style.left = rect.left+'px';
+  ghost.style.top = rect.top+'px';
+  ghost.style.margin='0';
+  ghost.style.zIndex='999';
+  ghost.style.pointerEvents='none';
+  ghost.style.opacity='0.92';
+  ghost.style.boxShadow='0 14px 30px rgba(0,0,0,.5)';
+  ghost.style.transform='rotate(-1.5deg) scale(1.03)';
+  ghost.style.transition='none';
+  document.body.appendChild(ghost);
+  dragState.ghostEl = ghost;
+  card.style.opacity='0.35';
+  dragState.dragging = true;
+  moveGhost(clientX, clientY);
+}
+
+function moveGhost(clientX, clientY){
+  const g = dragState.ghostEl;
+  g.style.left = (clientX - dragState.offsetX) + 'px';
+  g.style.top = (clientY - dragState.offsetY) + 'px';
+}
+
+function updateDropTarget(clientX, clientY){
+  document.querySelectorAll('.col-body.dragover').forEach(el=>el.classList.remove('dragover'));
+  dragState.ghostEl.style.visibility='hidden';
+  const el = document.elementFromPoint(clientX, clientY);
+  dragState.ghostEl.style.visibility='visible';
+  const colBody = el && el.closest('.col-body');
+  if(colBody) colBody.classList.add('dragover');
+  dragState.currentColBody = colBody;
+}
+
+function finishDrag(){
+  const colBody = dragState.currentColBody;
+  if(colBody){
+    const t = state.tasks.find(x=>x.id===dragState.taskId);
+    if(t && t.status!==colBody.dataset.col){
+      t.status = colBody.dataset.col;
+      saveState();
+      renderTrail();
+    }
+  }
+}
+
+function cleanupDrag(){
+  if(dragState){
+    dragState.ghostEl?.remove();
+    if(dragState.originEl) dragState.originEl.style.opacity='';
+  }
+  document.querySelectorAll('.col-body.dragover').forEach(el=>el.classList.remove('dragover'));
+  const wasDragging = dragState?.dragging;
+  dragState = null;
+  if(wasDragging) renderKanban();
+}
+
+document.addEventListener('pointermove', e=>{
+  if(!dragState) return;
+  if(dragState.pointerId!==e.pointerId) return;
+  const dx = e.clientX - dragState.startX;
+  const dy = e.clientY - dragState.startY;
+  if(!dragState.dragging){
+    if(Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+    beginDrag(e.clientX, e.clientY);
+  }
+  e.preventDefault();
+  moveGhost(e.clientX, e.clientY);
+  updateDropTarget(e.clientX, e.clientY);
+}, {passive:false});
+
+document.addEventListener('pointerup', e=>{
+  if(!dragState || dragState.pointerId!==e.pointerId) return;
+  if(dragState.dragging){ finishDrag(); }
+  cleanupDrag();
+});
+
+document.addEventListener('pointercancel', e=>{
+  if(!dragState || dragState.pointerId!==e.pointerId) return;
+  cleanupDrag();
+});
+
 function cardHtml(t){
   const catLabel = {time:'Temps', security:'Sécurité', dependencies:'Dépendances', general:'Général'}[t.category] || 'Général';
   const validated = t.status==='increment' ? '<span class="validated-stamp">LIVRÉ</span>' : (t.status==='done' ? '<span class="validated-stamp">VALIDÉ</span>' : '');
-  return `<div class="card" draggable="true" data-id="${t.id}">
+  return `<div class="card" data-id="${t.id}">
     ${validated}
     <button class="del">×</button>
     <div class="stamp-id">${t.id}</div>

@@ -217,7 +217,7 @@
   .col-empty{font-size:11.5px;color:var(--text-dim);text-align:center;padding:18px 6px;font-style:italic;}
 
   .card{
-    background:var(--panel-2);border:1px solid var(--border-soft);border-radius:8px;
+    background:var(--panel-2);border:1px solid var(--border-soft);border-left-width:3px;border-radius:8px;
     padding:11px 12px;cursor:grab;font-size:12.5px;position:relative;
     touch-action:none;user-select:none;-webkit-user-select:none;
   }
@@ -264,6 +264,26 @@
     border-radius:5px;padding:0 9px;font-size:13px;
   }
   .dod-add-row button:hover{color:var(--accent);border-color:var(--accent-dim);}
+
+  .problem-pill{
+    display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border-radius:16px;
+    background:var(--panel-2);border:1px solid var(--border-soft);font-size:11.5px;color:var(--text-muted);
+    cursor:pointer;white-space:nowrap;
+  }
+  .problem-pill.active{border-color:var(--accent);color:var(--text);background:var(--raised);}
+  .problem-pill .sw{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .problem-pill input[type="text"]{
+    background:transparent;border:none;color:inherit;font-size:11.5px;width:90px;padding:0;
+  }
+  .problem-pill input[type="text"]:focus{outline:none;}
+  .problem-pill .color-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;cursor:pointer;border:1px solid rgba(255,255,255,.2);}
+
+  .assignee-select{
+    font-family:var(--body);font-size:10.5px;padding:2px 6px;border-radius:4px;
+    background:var(--panel);border:1px solid var(--border-soft);color:var(--text-muted);
+    max-width:110px;touch-action:auto;cursor:pointer;
+  }
+  .assignee-select:focus{outline:none;border-color:var(--accent);}
   .chip.sprint{color:var(--accent);border-color:rgba(62,214,181,.25);}
   .card .del{position:absolute;top:8px;right:8px;color:var(--text-dim);background:none;border:none;font-size:13px;padding:2px 5px;opacity:0;transition:opacity .1s;}
   .card:hover .del{opacity:1;}
@@ -381,6 +401,13 @@
     <div class="eyebrow">Étape 1 · Cadrage</div>
     <h1>Analyse du problème</h1>
     <p class="lede">Décrivez la situation à traiter, avec le contexte utile (enjeux, parties prenantes, délais connus). L'IA reformule le problème et prépare une série de questions de clarification.</p>
+    <div class="panel" style="padding:14px 18px;">
+      <div class="row" style="gap:8px;">
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;">Dossier</span>
+        <div id="problemPills" class="row" style="gap:6px;"></div>
+        <button class="btn ghost small" id="btnNewProblem">+ Nouveau problème</button>
+      </div>
+    </div>
     <div class="panel">
       <div class="panel-title">Énoncé du problème<span class="tag">libre</span></div>
       <textarea class="field" id="problemInput" placeholder="Ex. : Notre dispositif de contrôle interne sur les accès à privilèges n'a pas été revu depuis 2 ans, et un audit externe est prévu dans 6 semaines..."></textarea>
@@ -460,6 +487,7 @@
       <span class="spacer"></span>
       <span id="activeSprintTag" class="chip sprint" style="display:none;"></span>
     </div>
+    <div class="row" id="kanbanFilterRow" style="margin-bottom:14px;gap:6px;"></div>
     <div class="board" id="board"></div>
   </section>
 
@@ -477,6 +505,14 @@
     <h1>Dashboard</h1>
     <p class="lede">Indicateurs de suivi global du dossier.</p>
     <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="panel">
+      <div class="panel-title">Répartition par dossier</div>
+      <div id="problemChart"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Charge par collaborateur</div>
+      <div id="assigneeChart"></div>
+    </div>
     <div class="panel">
       <div class="panel-title">Répartition des tâches par colonne</div>
       <div id="distChart"></div>
@@ -534,20 +570,45 @@ function makeDodList(rawItems){
   return (rawItems||[]).filter(Boolean).slice(0,6).map(text=>({id:newDodId(), text:String(text), checked:false}));
 }
 
+const PROBLEM_COLORS = ['#3ED6B5','#E8A93C','#4C9EFF','#B98CE8','#E76F51','#7FD858','#F2C94C','#FF6FA5'];
+
 let state = {
   stage:'analyse',
-  problem:'',
-  reformulation:'',
-  questions:[],
-  qaIndex:0,
-  qa:[], // {question, answer}
-  diagnostic:null, // {problemStatement, objective, risks:{time:[],security:[],dependencies:[]}}
-  tasks:[], // {id, title, description, effort, category, status, sprint}
+  problems:[], // {id, name, color, problem, reformulation, questions, qa, qaIndex, diagnostic}
+  activeProblemId:null,
+  collaborators:[], // {id, name}
+  tasks:[], // {id, title, description, effort, category, status, sprint, problemId, assignee, dod, completedAt}
   sprints:[], // {id, name, start, end, goal, closed}
   taskSeq:0,
   sprintSeq:0,
   dodSeq:0,
+  problemSeq:0,
+  collabSeq:0,
+  kanbanFilterProblemId:null,
 };
+
+function activeProblem(){
+  return state.problems.find(p=>p.id===state.activeProblemId) || null;
+}
+
+function createProblem(){
+  state.problemSeq++;
+  const p = {
+    id:'PB-'+String(state.problemSeq).padStart(2,'0'),
+    name:'Problème '+state.problemSeq,
+    color: PROBLEM_COLORS[(state.problemSeq-1) % PROBLEM_COLORS.length],
+    problem:'', reformulation:'', questions:[], qa:[], qaIndex:0, diagnostic:null
+  };
+  state.problems.push(p);
+  state.activeProblemId = p.id;
+  return p;
+}
+
+function ensureActiveProblem(){
+  if(state.problems.length===0) createProblem();
+  if(!activeProblem()) state.activeProblemId = state.problems[0].id;
+  return activeProblem();
+}
 
 const STORAGE_KEY = 'solveflow:v2:state';
 
@@ -559,6 +620,22 @@ async function loadState(){
       state = Object.assign(state, parsed);
     }
   }catch(e){ /* no saved state yet */ }
+
+  // Migration from the single-problem model (pre-multi-dossier).
+  if((!state.problems || state.problems.length===0) && (state.problem || state.reformulation || state.diagnostic)){
+    state.problemSeq = 1;
+    const legacy = {
+      id:'PB-01', name:'Problème 1', color: PROBLEM_COLORS[0],
+      problem: state.problem||'', reformulation: state.reformulation||'',
+      questions: state.questions||[], qa: state.qa||[], qaIndex: state.qaIndex||0,
+      diagnostic: state.diagnostic||null
+    };
+    state.problems = [legacy];
+    state.activeProblemId = 'PB-01';
+    (state.tasks||[]).forEach(t=>{ if(!t.problemId) t.problemId = 'PB-01'; });
+  }
+  ensureActiveProblem();
+  state.tasks.forEach(t=>{ if(t.problemId===undefined) t.problemId = state.activeProblemId; if(t.assignee===undefined) t.assignee = null; });
 }
 let saveTimer=null;
 function saveState(){
@@ -842,11 +919,12 @@ function parseJSON(raw){
 
 // ---------------- Navigation ----------------
 function stageReached(key){
+  const p = activeProblem();
   const order = STAGES.map(s=>s.key);
   const idx = order.indexOf(key);
   if(idx===0) return true;
-  if(key==='assistant') return !!state.reformulation;
-  if(key==='diagnostic') return !!state.diagnostic || (state.qa.length>0);
+  if(key==='assistant') return !!(p && p.reformulation);
+  if(key==='diagnostic') return !!(p && (p.diagnostic || p.qa.length>0));
   if(key==='kanban') return state.tasks.length>0;
   if(key==='calendrier') return state.sprints.length>0;
   if(key==='dashboard') return state.tasks.length>0;
@@ -862,12 +940,13 @@ function goTo(key){
 
 function renderTrail(){
   const el = document.getElementById('trail');
+  const p = activeProblem();
   el.innerHTML = STAGES.map((s,i)=>{
     const active = state.stage===s.key;
     const reached = stageReached(s.key);
     let doneFlag = false;
-    if(s.key==='analyse') doneFlag = !!state.reformulation;
-    if(s.key==='assistant') doneFlag = !!state.diagnostic;
+    if(s.key==='analyse') doneFlag = !!(p && p.reformulation);
+    if(s.key==='assistant') doneFlag = !!(p && p.diagnostic);
     if(s.key==='diagnostic') doneFlag = state.tasks.length>0;
     if(s.key==='kanban') doneFlag = state.sprints.length>0;
     if(s.key==='calendrier') doneFlag = state.tasks.some(t=>t.status==='increment');
@@ -879,7 +958,7 @@ function renderTrail(){
   el.querySelectorAll('.stage').forEach(n=> n.addEventListener('click', ()=> goTo(n.dataset.key)));
 
   const footer = document.getElementById('railFooter');
-  footer.textContent = state.problem ? ('Dossier : ' + state.problem.slice(0,42) + (state.problem.length>42?'…':'')) : 'Aucun dossier actif';
+  footer.textContent = (p && p.problem) ? ('Dossier : ' + p.problem.slice(0,42) + (p.problem.length>42?'…':'')) : 'Aucun dossier actif';
 }
 
 function render(){
@@ -894,11 +973,58 @@ function render(){
 }
 
 // ---------------- 1. Analyse ----------------
+function renderProblemPills(){
+  const box = document.getElementById('problemPills');
+  box.innerHTML = state.problems.map(p=>{
+    const isActive = p.id===state.activeProblemId;
+    return `<span class="problem-pill ${isActive?'active':''}" data-pid="${p.id}">
+      <span class="color-dot" style="background:${p.color}" data-pid="${p.id}" title="Changer la couleur"></span>
+      ${isActive
+        ? `<input type="text" class="pill-name-input" data-pid="${p.id}" value="${escapeAttr(p.name)}">`
+        : `<span class="pill-name" data-pid="${p.id}">${escapeHtml(p.name)}</span>`}
+    </span>`;
+  }).join('');
+
+  box.querySelectorAll('.pill-name').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      state.activeProblemId = el.dataset.pid;
+      render(); saveState();
+    });
+  });
+  box.querySelectorAll('.pill-name-input').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const p = state.problems.find(x=>x.id===el.dataset.pid);
+      if(p){ p.name = el.value.trim() || p.name; saveState(); renderTrail(); }
+    });
+    el.addEventListener('click', e=> e.stopPropagation());
+  });
+  box.querySelectorAll('.color-dot').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const p = state.problems.find(x=>x.id===el.dataset.pid);
+      if(!p) return;
+      const idx = PROBLEM_COLORS.indexOf(p.color);
+      p.color = PROBLEM_COLORS[(idx+1) % PROBLEM_COLORS.length];
+      renderProblemPills(); saveState();
+      if(state.stage==='kanban') renderKanban();
+    });
+  });
+}
+
+document.getElementById('btnNewProblem').addEventListener('click', ()=>{
+  createProblem();
+  render();
+  saveState();
+  toast('Nouveau dossier créé : ' + activeProblem().name);
+});
+
 function renderAnalyse(){
-  document.getElementById('problemInput').value = state.problem;
-  if(state.reformulation){
+  const p = ensureActiveProblem();
+  renderProblemPills();
+  document.getElementById('problemInput').value = p.problem;
+  if(p.reformulation){
     document.getElementById('reformPanel').style.display='block';
-    document.getElementById('reformText').textContent = state.reformulation;
+    document.getElementById('reformText').textContent = p.reformulation;
   } else {
     document.getElementById('reformPanel').style.display='none';
   }
@@ -907,7 +1033,8 @@ function renderAnalyse(){
 document.getElementById('btnAnalyse').addEventListener('click', async ()=>{
   const val = document.getElementById('problemInput').value.trim();
   if(!val){ toast('Décrivez le problème avant de lancer l\'analyse.'); return; }
-  state.problem = val;
+  const p = ensureActiveProblem();
+  p.problem = val;
   const statusEl = document.getElementById('analyseStatus');
   statusEl.style.display='flex';
   document.getElementById('btnAnalyse').disabled = true;
@@ -926,11 +1053,11 @@ document.getElementById('btnAnalyse').addEventListener('click', async ()=>{
       );
       parsed = parseJSON(raw);
     }
-    state.reformulation = parsed.reformulation;
-    state.questions = parsed.questions || [];
-    state.qa = [];
-    state.qaIndex = 0;
-    state.diagnostic = null;
+    p.reformulation = parsed.reformulation;
+    p.questions = parsed.questions || [];
+    p.qa = [];
+    p.qaIndex = 0;
+    p.diagnostic = null;
     render();
     toast('Reformulation générée.');
   }catch(e){
@@ -947,9 +1074,10 @@ document.getElementById('btnToChat').addEventListener('click', ()=> goTo('assist
 
 // ---------------- 2. Assistant conversationnel ----------------
 function renderAssistant(){
+  const p = ensureActiveProblem();
   const log = document.getElementById('chatLog');
-  let html = `<div class="bubble ai"><div class="who">SolveFlow · IA</div>${escapeHtml(state.reformulation||'')}</div>`;
-  state.qa.forEach(item=>{
+  let html = `<div class="bubble ai"><div class="who">SolveFlow · IA</div>${escapeHtml(p.reformulation||'')}</div>`;
+  p.qa.forEach(item=>{
     html += `<div class="bubble ai"><div class="who">SolveFlow · IA</div>${escapeHtml(item.question)}</div>`;
     html += `<div class="bubble user"><div class="who">Vous</div>${escapeHtml(item.answer)}</div>`;
   });
@@ -958,13 +1086,13 @@ function renderAssistant(){
 
   const answerRow = document.getElementById('answerRow');
   const genRow = document.getElementById('genDiagRow');
-  if(state.qaIndex < state.questions.length){
+  if(p.qaIndex < p.questions.length){
     answerRow.style.display='flex';
-    genRow.style.display = state.qa.length>0 ? 'flex' : 'none';
+    genRow.style.display = p.qa.length>0 ? 'flex' : 'none';
     if(!document.getElementById('curQuestion')){
       const q = document.createElement('div');
       q.className='bubble ai'; q.id='curQuestion';
-      q.innerHTML = `<div class="who">SolveFlow · IA</div>${escapeHtml(state.questions[state.qaIndex])}`;
+      q.innerHTML = `<div class="who">SolveFlow · IA</div>${escapeHtml(p.questions[p.qaIndex])}`;
       log.appendChild(q);
     }
   } else {
@@ -978,12 +1106,13 @@ function escapeHtml(s){
 }
 
 document.getElementById('btnSendAnswer').addEventListener('click', ()=>{
+  const p = activeProblem();
   const input = document.getElementById('answerInput');
   const val = input.value.trim();
-  if(!val) return;
-  const q = state.questions[state.qaIndex];
-  state.qa.push({question:q, answer:val});
-  state.qaIndex++;
+  if(!val || !p) return;
+  const q = p.questions[p.qaIndex];
+  p.qa.push({question:q, answer:val});
+  p.qaIndex++;
   input.value='';
   renderAssistant();
   saveState();
@@ -993,23 +1122,24 @@ document.getElementById('answerInput').addEventListener('keydown', (e)=>{
 });
 
 document.getElementById('btnGenDiag').addEventListener('click', async ()=>{
+  const p = ensureActiveProblem();
   const btn = document.getElementById('btnGenDiag');
   btn.disabled = true;
   btn.textContent = 'Génération du diagnostic…';
   try{
-    const qaText = state.qa.map(x=>`Q: ${x.question}\nR: ${x.answer}`).join('\n');
+    const qaText = p.qa.map(x=>`Q: ${x.question}\nR: ${x.answer}`).join('\n');
     if(isDemoMode()){
       await sleep(500);
-      state.diagnostic = demoDiagnostic(state.problem, state.qa);
+      p.diagnostic = demoDiagnostic(p.problem, p.qa);
     } else {
       const raw = await callAI(
         "Tu es un consultant senior en gouvernance, audit et gestion des risques. À partir du problème et des réponses de clarification, produis un diagnostic structuré. "+
         "Réponds UNIQUEMENT en JSON valide avec ce schéma exact: "+
         '{"problemStatement":"reformulation finale précise du problème","objective":"objectif principal recherché, formulé comme un résultat mesurable","risks":{"time":["contrainte 1","contrainte 2"],"security":["risque 1"],"dependencies":["dépendance 1"]}}'+
         " Chaque liste contient 1 à 3 éléments courts. Réponds en français.",
-        `Problème: ${state.reformulation}\n\n${qaText}`, 800
+        `Problème: ${p.reformulation}\n\n${qaText}`, 800
       );
-      state.diagnostic = parseJSON(raw);
+      p.diagnostic = parseJSON(raw);
     }
     goTo('diagnostic');
     toast('Diagnostic généré.');
@@ -1025,11 +1155,12 @@ document.getElementById('btnGenDiag').addEventListener('click', async ()=>{
 
 // ---------------- 3. Diagnostic ----------------
 function renderDiagnostic(){
-  const has = !!state.diagnostic;
+  const p = ensureActiveProblem();
+  const has = !!p.diagnostic;
   document.getElementById('diagEmpty').style.display = has ? 'none':'block';
   document.getElementById('diagContent').style.display = has ? 'block':'none';
   if(!has) return;
-  const d = state.diagnostic;
+  const d = p.diagnostic;
   document.getElementById('diagProblem').textContent = d.problemStatement || '—';
   document.getElementById('diagObjective').textContent = d.objective || '—';
   const fill = (id, arr)=>{
@@ -1041,15 +1172,17 @@ function renderDiagnostic(){
   fill('riskSec', d.risks && d.risks.security);
   fill('riskDep', d.risks && d.risks.dependencies);
 
-  document.getElementById('btnGenBacklog').style.display = state.tasks.length>0 ? 'none':'inline-flex';
+  const hasTasksForThisProblem = state.tasks.some(t=>t.problemId===p.id);
+  document.getElementById('btnGenBacklog').style.display = hasTasksForThisProblem ? 'none' : 'inline-flex';
 }
 
 document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
+  const p = ensureActiveProblem();
   const statusEl = document.getElementById('backlogStatus');
   statusEl.style.display='flex';
   document.getElementById('btnGenBacklog').disabled=true;
   try{
-    const d = state.diagnostic;
+    const d = p.diagnostic;
     let parsed;
     if(isDemoMode()){
       await sleep(600);
@@ -1075,7 +1208,8 @@ document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
         effort: nearestFibonacci(t.effort || 3),
         category: t.category || 'general',
         status:'backlog', sprint:null, completedAt:null,
-        dod: makeDodList(t.dod)
+        dod: makeDodList(t.dod),
+        problemId: p.id, assignee: null
       });
     });
     autoScheduleSprints();
@@ -1146,10 +1280,30 @@ function activeSprint(){
   return state.sprints.find(s=>!s.closed);
 }
 
+function renderKanbanFilterRow(){
+  const box = document.getElementById('kanbanFilterRow');
+  const all = `<span class="problem-pill ${!state.kanbanFilterProblemId?'active':''}" data-filter="all">Tous les dossiers</span>`;
+  const pills = state.problems.map(p=>{
+    const count = state.tasks.filter(t=>t.problemId===p.id).length;
+    return `<span class="problem-pill ${state.kanbanFilterProblemId===p.id?'active':''}" data-filter="${p.id}">
+      <span class="sw" style="background:${p.color}"></span>${escapeHtml(p.name)} <span style="color:var(--text-dim);">(${count})</span>
+    </span>`;
+  }).join('');
+  box.innerHTML = all + pills;
+  box.querySelectorAll('.problem-pill').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      state.kanbanFilterProblemId = el.dataset.filter==='all' ? null : el.dataset.filter;
+      renderKanban(); saveState();
+    });
+  });
+}
+
 function renderKanban(){
+  renderKanbanFilterRow();
   const board = document.getElementById('board');
+  const filterId = state.kanbanFilterProblemId;
   board.innerHTML = COLUMNS.map(col=>{
-    const items = state.tasks.filter(t=> t.status===col.key);
+    const items = state.tasks.filter(t=> t.status===col.key && (!filterId || t.problemId===filterId));
     return `<div class="col" data-col="${col.key}">
       <div class="col-head"><span class="col-dot" style="background:${col.dot}"></span><span class="col-title">${col.label}</span><span class="col-count">${items.length}</span></div>
       <div class="col-body" data-col="${col.key}">
@@ -1170,6 +1324,29 @@ function renderKanban(){
     c.querySelector('.effort-select')?.addEventListener('change', e=>{
       const t = state.tasks.find(x=>x.id===c.dataset.id);
       if(t){ t.effort = Number(e.target.value); saveState(); }
+    });
+
+    const assigneeSel = c.querySelector('.assignee-select');
+    assigneeSel?.addEventListener('pointerdown', e=> e.stopPropagation());
+    assigneeSel?.addEventListener('change', e=>{
+      const t = state.tasks.find(x=>x.id===c.dataset.id);
+      if(!t) return;
+      if(e.target.value==='__new__'){
+        const name = prompt('Nom du nouveau collaborateur :');
+        if(name && name.trim()){
+          state.collabSeq++;
+          const collab = {id:'C'+state.collabSeq, name:name.trim()};
+          state.collaborators.push(collab);
+          t.assignee = collab.id;
+          saveState();
+          renderKanban();
+        } else {
+          e.target.value = t.assignee || '';
+        }
+      } else {
+        t.assignee = e.target.value || null;
+        saveState();
+      }
     });
 
     // ---- Definition of Done ----
@@ -1253,8 +1430,9 @@ function renderKanban(){
     const inp = document.getElementById('quickAdd');
     const val = inp.value.trim();
     if(!val) return;
+    const p = ensureActiveProblem();
     state.taskSeq++;
-    state.tasks.push({id:'TSK-'+String(state.taskSeq).padStart(3,'0'), title:val, description:'', effort:1, category:'general', status:'backlog', sprint:null, completedAt:null, dod:[]});
+    state.tasks.push({id:'TSK-'+String(state.taskSeq).padStart(3,'0'), title:val, description:'', effort:1, category:'general', status:'backlog', sprint:null, completedAt:null, dod:[], problemId:p.id, assignee:null});
     inp.value='';
     renderKanban(); saveState();
   });
@@ -1390,10 +1568,13 @@ function cardHtml(t){
   const dod = t.dod || [];
   const checkedCount = dod.filter(d=>d.checked).length;
   const dodComplete = dod.length>0 && checkedCount===dod.length;
-  return `<div class="card" data-id="${t.id}">
+  const prob = state.problems.find(p=>p.id===t.problemId);
+  const borderColor = prob ? prob.color : 'var(--border-soft)';
+  const collabOptions = state.collaborators.map(c=>`<option value="${c.id}" ${t.assignee===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
+  return `<div class="card" data-id="${t.id}" style="border-left-color:${borderColor};">
     ${validated}
     <button class="del">×</button>
-    <div class="stamp-id">${t.id}</div>
+    <div class="stamp-id">${t.id}${prob ? ` <span style="color:${prob.color};">· ${escapeHtml(prob.name)}</span>` : ''}</div>
     <div class="title">${escapeHtml(t.title)}</div>
     ${t.description ? `<div class="desc">${escapeHtml(t.description)}</div>` : ''}
     <div class="meta">
@@ -1402,6 +1583,13 @@ function cardHtml(t){
       </select>
       <span class="chip">${catLabel}</span>
       ${t.sprint ? `<span class="chip sprint">${t.sprint}</span>` : ''}
+    </div>
+    <div class="meta" style="margin-top:6px;">
+      <select class="assignee-select" data-id="${t.id}" title="Assigné à">
+        <option value="">— Non assigné —</option>
+        ${collabOptions}
+        <option value="__new__">+ Nouveau collaborateur…</option>
+      </select>
     </div>
     <div class="dod-toggle" data-task="${t.id}">
       <span class="chev">▸</span>DoD <span class="dod-count ${dodComplete?'complete':''}">${checkedCount}/${dod.length}</span>
@@ -1460,7 +1648,11 @@ function renderCalendar(){
         <div class="sprint-goal">${escapeHtml(s.goal||'')}</div>
       </div>
       <div class="sprint-track">
-        ${tasks.map(t=>`<div class="track-chip"><span class="s" style="background:${statusColor[t.status]}"></span>${escapeHtml(t.title)}</div>`).join('') || '<span style="color:var(--text-dim);font-size:12px;">Aucune tâche</span>'}
+        ${tasks.map(t=>{
+          const prob = state.problems.find(p=>p.id===t.problemId);
+          const borderColor = prob ? prob.color : 'var(--border-soft)';
+          return `<div class="track-chip" style="border-left:3px solid ${borderColor};"><span class="s" style="background:${statusColor[t.status]}"></span>${escapeHtml(t.title)}</div>`;
+        }).join('') || '<span style="color:var(--text-dim);font-size:12px;">Aucune tâche</span>'}
       </div>
     </div>`;
   }).join('');
@@ -1574,6 +1766,41 @@ function renderDashboard(){
     <div class="kpi"><div class="kpi-label">Sprint actif</div><div class="kpi-value">${activeS? activeS.name : '—'}</div><div class="kpi-sub">${activeS? fmtDate(new Date(activeS.start))+' → '+fmtDate(new Date(activeS.end)) : 'Aucun sprint ouvert'}</div></div>
     <div class="kpi"><div class="kpi-label">Effort livré</div><div class="kpi-value warn">${doneEffort}/${totalEffort}</div><div class="kpi-sub">points réalisés</div></div>
   `;
+
+  const probBox = document.getElementById('problemChart');
+  if(state.problems.length===0){
+    probBox.innerHTML = '<div style="color:var(--text-dim);font-size:12.5px;">Aucun dossier créé.</div>';
+  } else {
+    probBox.innerHTML = state.problems.map(p=>{
+      const n = state.tasks.filter(t=>t.problemId===p.id).length;
+      const w = total? (n/total*100) : 0;
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:140px;font-family:var(--mono);font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+          <span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0;"></span>${escapeHtml(p.name)}
+        </div>
+        <div class="bar-wrap" style="flex:1;"><div class="bar-fill" style="width:${w}%;background:${p.color};"></div></div>
+        <div style="width:26px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${n}</div>
+      </div>`;
+    }).join('');
+  }
+
+  const assigneeBox = document.getElementById('assigneeChart');
+  if(state.collaborators.length===0){
+    assigneeBox.innerHTML = '<div style="color:var(--text-dim);font-size:12.5px;">Aucun collaborateur assigné pour le moment — utilisez le sélecteur « Assigné à » sur une carte du Kanban.</div>';
+  } else {
+    const rows = state.collaborators.map(c=>{
+      const n = state.tasks.filter(t=>t.assignee===c.id).length;
+      const w = total? (n/total*100) : 0;
+      return {name:c.name, n, w};
+    });
+    const unassigned = state.tasks.filter(t=>!t.assignee).length;
+    if(unassigned>0) rows.push({name:'Non assigné', n:unassigned, w: total? unassigned/total*100:0});
+    assigneeBox.innerHTML = rows.map(r=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <div style="width:140px;font-family:var(--mono);font-size:11px;color:var(--text-muted);">${escapeHtml(r.name)}</div>
+      <div class="bar-wrap" style="flex:1;"><div class="bar-fill" style="width:${r.w}%;"></div></div>
+      <div style="width:26px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${r.n}</div>
+    </div>`).join('');
+  }
 
   const dist = document.getElementById('distChart');
   dist.innerHTML = COLUMNS.map(c=>{

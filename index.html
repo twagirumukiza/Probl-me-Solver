@@ -642,7 +642,11 @@ async function loadState(){
     (state.tasks||[]).forEach(t=>{ if(!t.problemId) t.problemId = 'PB-01'; });
   }
   ensureActiveProblem();
-  state.tasks.forEach(t=>{ if(t.problemId===undefined) t.problemId = state.activeProblemId; if(t.assignee===undefined) t.assignee = null; });
+  state.tasks.forEach(t=>{
+    if(t.problemId===undefined) t.problemId = state.activeProblemId;
+    if(t.assignee===undefined) t.assignee = null;
+    if(!Array.isArray(t.dod)) t.dod = [];
+  });
 }
 let saveTimer=null;
 function saveState(){
@@ -1374,6 +1378,7 @@ function renderKanban(){
     panel?.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
       cb.addEventListener('change', ()=>{
         const t = state.tasks.find(x=>x.id===c.dataset.id);
+        if(t && !Array.isArray(t.dod)) t.dod = [];
         const item = t?.dod.find(d=>d.id===cb.dataset.dod);
         if(item){
           item.checked = cb.checked;
@@ -1388,7 +1393,7 @@ function renderKanban(){
       btn.addEventListener('click', ()=>{
         const t = state.tasks.find(x=>x.id===c.dataset.id);
         if(!t) return;
-        t.dod = t.dod.filter(d=>d.id!==btn.dataset.dod);
+        t.dod = (t.dod||[]).filter(d=>d.id!==btn.dataset.dod);
         btn.closest('li').remove();
         updateDodCount(c, t);
         saveState();
@@ -1402,6 +1407,7 @@ function renderKanban(){
       if(!val) return;
       const t = state.tasks.find(x=>x.id===c.dataset.id);
       if(!t) return;
+      if(!Array.isArray(t.dod)) t.dod = [];
       const item = {id:newDodId(), text:val, checked:false};
       t.dod.push(item);
       const li = document.createElement('li');
@@ -1414,7 +1420,7 @@ function renderKanban(){
         saveState();
       });
       li.querySelector('.dod-del').addEventListener('click', ()=>{
-        t.dod = t.dod.filter(d=>d.id!==item.id);
+        t.dod = (t.dod||[]).filter(d=>d.id!==item.id);
         li.remove();
         updateDodCount(c, t);
         saveState();
@@ -1431,8 +1437,9 @@ function renderKanban(){
   function updateDodCount(cardEl, task){
     const countEl = cardEl.querySelector('.dod-count');
     if(!countEl) return;
-    const total = task.dod.length;
-    const checked = task.dod.filter(d=>d.checked).length;
+    const dod = task.dod || [];
+    const total = dod.length;
+    const checked = dod.filter(d=>d.checked).length;
     countEl.textContent = `${checked}/${total}`;
     countEl.classList.toggle('complete', total>0 && checked===total);
   }

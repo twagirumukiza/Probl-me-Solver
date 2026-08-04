@@ -2,47 +2,67 @@
 
 ## 1. Mettre le fichier dans votre repo
 
-- Renommez `index.html` (déjà fait) et placez-le à la racine de votre repo `Probl-me-Solver`
-  (ou dans `/docs` si vous servez Pages depuis ce dossier).
-- Committez et poussez.
-- Dans **Settings → Pages**, vérifiez que la source pointe bien vers la branche/dossier utilisé.
-- Le site sera servi sur `https://twagirumukiza.github.io/Probl-me-Solver/`.
+- Le fichier `index.html` va à la racine de votre repo `Probl-me-Solver`.
+- Committez, poussez. Dans **Settings → Pages**, vérifiez que la source pointe vers la
+  branche/dossier utilisé.
+- Le site est servi sur `https://twagirumukiza.github.io/Probl-me-Solver/`.
 
-## 2. Configurer l'accès à l'API Claude
+## 2. Choisir un fournisseur IA
 
-GitHub Pages ne sert que du statique : il n'y a pas de serveur pour cacher une clé API.
-L'app propose donc deux modes, à choisir via le bouton **⚙ Clé API** dans la barre latérale.
+GitHub Pages ne sert que du statique : il n'y a pas de serveur pour cacher une clé API, donc
+chaque appel IA part directement du navigateur vers le fournisseur choisi. Ouvrez le bouton
+**⚙ Fournisseur IA** dans la barre latérale pour configurer.
 
-### Option A — Clé API directe (rapide, usage personnel)
-1. Créez une clé sur [console.anthropic.com](https://console.anthropic.com) → API Keys.
-2. Collez-la dans le champ "Clé API" de SolveFlow.
-3. Elle est stockée uniquement dans le `localStorage` de votre navigateur et envoyée
-   uniquement à `api.anthropic.com` (appel direct, header `anthropic-dangerous-direct-browser-access`).
+### Mode Démo (sans IA)
+Aucune clé nécessaire. Les 3 étapes IA (analyse, diagnostic, backlog) utilisent des exemples
+préconstruits. Utile pour montrer l'application sans dépendre d'un compte externe.
 
-**Limite de sécurité** : n'importe qui ouvrant les outils de développement de VOTRE navigateur
-sur CETTE machine, à ce moment-là, pourrait lire cette clé. N'utilisez cette option que sur un
-poste personnel, et ne la configurez jamais sur un poste partagé ou public. Cette option ne
-convient pas si vous comptez partager le lien du site avec des tiers en attendant qu'ils
-utilisent votre clé.
+### Google Gemini — fournisseur par défaut
+1. Créez une clé gratuite sur https://aistudio.google.com/apikey (compte Google suffit,
+   aucune carte bancaire requise pour le palier gratuit).
+2. Collez-la dans le champ "Clé API" avec Gemini sélectionné.
+3. Modèle par défaut : `gemini-2.5-flash`. Les quotas gratuits sont limités en requêtes/minute —
+   en cas d'erreur 429, patientez quelques secondes avant de relancer.
 
-### Option B — Proxy Cloudflare Worker (recommandé si plusieurs personnes utilisent l'app)
-La clé ne touche jamais le navigateur ; elle reste sur le serveur du Worker.
+### Autres fournisseurs déjà câblés
+Le même écran de réglages gère aussi :
+- **OpenAI** — clé sur https://platform.openai.com/api-keys (payant, pas de palier gratuit).
+- **DeepSeek** — clé sur https://platform.deepseek.com/api_keys (tarifs bas, pas de palier gratuit).
+- **Groq** — clé sur https://console.groq.com/keys (palier gratuit généreux, modèles open-source
+  type Llama, réponses très rapides).
+- **Ollama (local)** — aucune clé, fait tourner un modèle en local sur votre machine
+  (`ollama serve`). Lancez-le avec `OLLAMA_ORIGINS` incluant l'origine du site GitHub Pages
+  pour que le navigateur soit autorisé à l'appeler (CORS). Adapté à un usage strictement
+  personnel, sur la machine qui fait tourner Ollama.
+- **Anthropic (Claude)** — clé sur https://console.anthropic.com, avec option de proxy
+  (voir `worker.js` ci-dessous).
 
-1. Allez sur [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → Create Worker.
-2. Collez le contenu de `worker.js` (fourni à côté de ce fichier).
-3. Déployez, puis dans **Settings → Variables and Secrets**, ajoutez un secret
-   `ANTHROPIC_API_KEY` avec votre clé.
-4. Copiez l'URL du Worker (`https://xxxx.workers.dev`).
-5. Dans SolveFlow, ouvrez **⚙ Clé API** et collez cette URL dans le champ "URL du proxy".
-   Le champ clé API peut rester vide.
+### Ajouter un futur fournisseur
+Le code est organisé pour ça : un objet `PROVIDERS` (dans `index.html`) définit chaque
+fournisseur en quelques lignes, et la fonction `callAI()` route vers une des trois formes
+d'API déjà supportées (`gemini`, `openai-compat` — qui couvre aussi tout futur fournisseur
+compatible OpenAI, comme Mistral ou xAI —, ou `anthropic`). Ajouter un fournisseur qui suit un
+de ces trois formats ne demande qu'une entrée dans `PROVIDERS`, sans toucher au reste de
+l'application (diagnostic, backlog, kanban, etc.).
 
-Le Worker Cloudflare a un plan gratuit largement suffisant pour un usage individuel ou pour
-une classe (100 000 requêtes/jour).
+## 3. Option proxy sécurisé (pour Anthropic ou tout fournisseur OpenAI-compatible)
 
-## 3. Notes
+Si vous préférez ne jamais exposer de clé dans le navigateur (par exemple si l'app est
+partagée avec des élèves), déployez `worker.js` sur Cloudflare :
 
-- Les données du dossier (problème, backlog, sprints) sont sauvegardées dans le
-  `localStorage` du navigateur — propre à chaque appareil/navigateur, pas synchronisé entre eux.
-- Le modèle utilisé est `claude-sonnet-5`. Vous pouvez le changer dans `index.html`
-  (fonction `callClaude`, propriété `model`) si vous préférez un autre modèle disponible sur
-  votre compte API.
+1. https://dash.cloudflare.com → Workers & Pages → Create Worker.
+2. Collez le contenu de `worker.js`, déployez.
+3. **Settings → Variables and Secrets** → ajoutez `ANTHROPIC_API_KEY`.
+4. Copiez l'URL du Worker (`https://xxxx.workers.dev`) dans le champ "URL du proxy" du
+   fournisseur Anthropic.
+
+Plan gratuit Cloudflare largement suffisant pour un usage individuel ou une classe
+(100 000 requêtes/jour).
+
+## 4. Notes
+
+- Les données du dossier (problème, backlog, sprints) et les identifiants de chaque
+  fournisseur sont stockés dans le `localStorage` du navigateur — propres à chaque
+  appareil/navigateur, non synchronisés entre eux.
+- Changer de fournisseur dans les réglages ne supprime pas les identifiants déjà saisis
+  pour les autres — chacun est conservé sous sa propre clé de stockage.

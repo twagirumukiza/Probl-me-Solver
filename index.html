@@ -302,30 +302,37 @@
   <div class="trail" id="trail"></div>
   <div class="rail-footer" id="railFooter">Aucun dossier actif</div>
   <div class="rail-footer" style="border-top:none;padding-top:8px;">
-    <button class="btn ghost small" id="btnSettings" style="width:100%;justify-content:center;">⚙ Clé API</button>
+    <button class="btn ghost small" id="btnSettings" style="width:100%;justify-content:center;">⚙ Fournisseur IA</button>
+    <div id="providerBadge" style="font-family:var(--mono);font-size:9.5px;color:var(--text-dim);text-align:center;margin-top:6px;"></div>
   </div>
 </nav>
 
-<div id="settingsOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,13,.7);z-index:60;align-items:center;justify-content:center;">
-  <div class="panel" style="width:420px;max-width:92vw;">
-    <div class="panel-title">Configuration API<span class="tag">local</span></div>
+<div id="settingsOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,13,.7);z-index:60;align-items:center;justify-content:center;overflow:auto;">
+  <div class="panel" style="width:460px;max-width:92vw;margin:30px 0;">
+    <div class="panel-title">Fournisseur IA<span class="tag">local</span></div>
     <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;margin-top:0;">
-      SolveFlow appelle directement l'API Anthropic depuis votre navigateur. Votre clé est stockée uniquement dans le
-      <code style="font-family:var(--mono);">localStorage</code> de ce navigateur et n'est jamais transmise ailleurs qu'à
-      <code style="font-family:var(--mono);">api.anthropic.com</code>. Ne partagez pas ce lien avec cette clé déjà configurée
-      sur une machine partagée.
+      Choisissez comment SolveFlow accède à l'IA. Vos identifiants sont stockés uniquement dans le
+      <code style="font-family:var(--mono);">localStorage</code> de ce navigateur, par fournisseur — changer de fournisseur
+      ne supprime pas les identifiants des autres.
     </p>
-    <input type="password" class="field" id="apiKeyInput" placeholder="sk-ant-...">
-    <p style="font-size:11.5px;color:var(--text-dim);line-height:1.6;margin:12px 0 4px;">
-      Alternative plus sûre : passez par un petit proxy (ex. Cloudflare Worker) qui garde la clé côté serveur.
-      Renseignez alors son URL ci-dessous — la clé ci-dessus devient inutile.
-    </p>
-    <input type="text" class="field" id="proxyUrlInput" placeholder="https://votre-worker.workers.dev (optionnel)">
+
+    <select class="field" id="providerSelect" style="margin-bottom:14px;">
+      <option value="demo">Mode Démo (sans IA)</option>
+      <option value="gemini">Google Gemini</option>
+      <option value="openai">OpenAI</option>
+      <option value="deepseek">DeepSeek</option>
+      <option value="groq">Groq</option>
+      <option value="ollama">Ollama (local)</option>
+      <option value="anthropic">Anthropic (Claude)</option>
+    </select>
+
+    <div id="providerFields"></div>
+
     <div class="row" style="margin-top:14px;">
       <button class="btn" id="btnSaveKey">Enregistrer</button>
       <button class="btn ghost" id="btnCloseSettings">Fermer</button>
       <span class="spacer"></span>
-      <button class="btn ghost small" id="btnClearKey" style="color:var(--danger);border-color:rgba(231,111,81,.4);">Effacer</button>
+      <button class="btn ghost small" id="btnClearKey" style="color:var(--danger);border-color:rgba(231,111,81,.4);">Effacer ce fournisseur</button>
     </div>
   </div>
 </div>
@@ -482,7 +489,6 @@ let state = {
 };
 
 const STORAGE_KEY = 'solveflow:v2:state';
-const API_KEY_STORAGE = 'solveflow:v2:apikey';
 
 async function loadState(){
   try{
@@ -502,37 +508,117 @@ function saveState(){
   }, 250);
 }
 
-const PROXY_URL_STORAGE = 'solveflow:v2:proxyurl';
-function getApiKey(){ return localStorage.getItem(API_KEY_STORAGE) || ''; }
-function setApiKey(k){ localStorage.setItem(API_KEY_STORAGE, k); }
-function clearApiKey(){ localStorage.removeItem(API_KEY_STORAGE); }
-function getProxyUrl(){ return localStorage.getItem(PROXY_URL_STORAGE) || ''; }
-function setProxyUrl(u){ localStorage.setItem(PROXY_URL_STORAGE, u); }
-function clearProxyUrl(){ localStorage.removeItem(PROXY_URL_STORAGE); }
+// ---------------- AI provider registry ----------------
+// Adding a new provider = one entry here (+ a request/response branch in callAI
+// if its API shape isn't already covered by 'gemini', 'openai-compat' or 'anthropic').
+const PROVIDERS = {
+  demo:     {label:'Mode Démo (sans IA)', kind:'demo'},
+  gemini:   {label:'Google Gemini',  kind:'gemini',       defaultModel:'gemini-2.5-flash', needsKey:true, keyUrl:'https://aistudio.google.com/apikey'},
+  openai:   {label:'OpenAI',         kind:'openai-compat',defaultBaseUrl:'https://api.openai.com/v1',      defaultModel:'gpt-4o-mini',              needsKey:true, keyUrl:'https://platform.openai.com/api-keys'},
+  deepseek: {label:'DeepSeek',       kind:'openai-compat',defaultBaseUrl:'https://api.deepseek.com',       defaultModel:'deepseek-chat',            needsKey:true, keyUrl:'https://platform.deepseek.com/api_keys'},
+  groq:     {label:'Groq',           kind:'openai-compat',defaultBaseUrl:'https://api.groq.com/openai/v1', defaultModel:'llama-3.3-70b-versatile',  needsKey:true, keyUrl:'https://console.groq.com/keys'},
+  ollama:   {label:'Ollama (local)', kind:'openai-compat',defaultBaseUrl:'http://localhost:11434/v1',      defaultModel:'llama3.3',                 needsKey:false},
+  anthropic:{label:'Anthropic (Claude)', kind:'anthropic',defaultModel:'claude-sonnet-5', needsKey:true, keyUrl:'https://console.anthropic.com', supportsProxy:true},
+};
+
+const PROVIDER_STORAGE = 'solveflow:v2:provider';
+const CRED_PREFIX = 'solveflow:v2:cred:';
+
+function getProvider(){ return localStorage.getItem(PROVIDER_STORAGE) || 'gemini'; }
+function setProvider(p){ localStorage.setItem(PROVIDER_STORAGE, p); }
+function getCred(key){
+  try{ return JSON.parse(localStorage.getItem(CRED_PREFIX+key) || '{}'); }
+  catch(e){ return {}; }
+}
+function setCred(key, cred){ localStorage.setItem(CRED_PREFIX+key, JSON.stringify(cred)); }
+function clearCred(key){ localStorage.removeItem(CRED_PREFIX+key); }
+
+// Migration from the single-provider (Anthropic-only) v2 storage.
+(function migrateLegacyCredentials(){
+  const legacyKey = localStorage.getItem('solveflow:v2:apikey');
+  const legacyProxy = localStorage.getItem('solveflow:v2:proxyurl');
+  if((legacyKey || legacyProxy) && !localStorage.getItem(PROVIDER_STORAGE)){
+    setCred('anthropic', {apiKey: legacyKey||'', proxyUrl: legacyProxy||''});
+    setProvider('anthropic');
+  }
+  localStorage.removeItem('solveflow:v2:apikey');
+  localStorage.removeItem('solveflow:v2:proxyurl');
+})();
+
+function escapeAttr(s){ return (s||'').replace(/"/g,'&quot;'); }
+
+function renderProviderFields(){
+  const key = document.getElementById('providerSelect').value;
+  const def = PROVIDERS[key];
+  const cred = getCred(key);
+  const box = document.getElementById('providerFields');
+  let html = '';
+  if(def.kind==='demo'){
+    html = `<p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">Aucun appel IA n'est effectué. Chaque étape (analyse, diagnostic, backlog) utilise un exemple préconstruit pour découvrir l'application sans clé.</p>`;
+  } else {
+    if(def.needsKey){
+      html += `<input type="password" class="field" id="fld_apiKey" placeholder="Clé API" value="${escapeAttr(cred.apiKey||'')}" style="margin-bottom:10px;">`;
+      if(def.keyUrl) html += `<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px;">Obtenir une clé : <a href="${def.keyUrl}" target="_blank" rel="noopener">${def.keyUrl}</a></p>`;
+    }
+    if(def.kind==='openai-compat'){
+      html += `<input type="text" class="field" id="fld_baseUrl" placeholder="URL de base (défaut : ${def.defaultBaseUrl})" value="${escapeAttr(cred.baseUrl||'')}" style="margin-bottom:10px;">`;
+    }
+    html += `<input type="text" class="field" id="fld_model" placeholder="Modèle (défaut : ${def.defaultModel})" value="${escapeAttr(cred.model||'')}">`;
+    if(def.kind==='anthropic' && def.supportsProxy){
+      html += `<p style="font-size:11.5px;color:var(--text-dim);line-height:1.6;margin:12px 0 4px;">Alternative plus sûre : proxy (ex. Cloudflare Worker) qui garde la clé côté serveur — la clé ci-dessus devient alors inutile.</p>
+        <input type="text" class="field" id="fld_proxyUrl" placeholder="https://votre-worker.workers.dev (optionnel)" value="${escapeAttr(cred.proxyUrl||'')}">`;
+    }
+    if(key==='ollama'){
+      html += `<p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.6;">Ollama doit autoriser les appels depuis le navigateur : lancez-le avec la variable <code style="font-family:var(--mono);">OLLAMA_ORIGINS</code> incluant l'origine de ce site.</p>`;
+    }
+  }
+  box.innerHTML = html;
+}
+document.getElementById('providerSelect').addEventListener('change', renderProviderFields);
 
 function openSettings(){
-  document.getElementById('apiKeyInput').value = getApiKey();
-  document.getElementById('proxyUrlInput').value = getProxyUrl();
+  document.getElementById('providerSelect').value = getProvider();
+  renderProviderFields();
   document.getElementById('settingsOverlay').style.display='flex';
 }
 document.getElementById('btnSettings').addEventListener('click', openSettings);
 document.getElementById('btnCloseSettings').addEventListener('click', ()=> document.getElementById('settingsOverlay').style.display='none');
+
 document.getElementById('btnSaveKey').addEventListener('click', ()=>{
-  const v = document.getElementById('apiKeyInput').value.trim();
-  const p = document.getElementById('proxyUrlInput').value.trim();
-  if(!v && !p){ toast('Entrez une clé API ou une URL de proxy.'); return; }
-  setApiKey(v);
-  setProxyUrl(p);
+  const key = document.getElementById('providerSelect').value;
+  const def = PROVIDERS[key];
+  const cred = {};
+  if(def.kind!=='demo'){
+    const apiKeyEl = document.getElementById('fld_apiKey');
+    const baseUrlEl = document.getElementById('fld_baseUrl');
+    const modelEl = document.getElementById('fld_model');
+    const proxyEl = document.getElementById('fld_proxyUrl');
+    if(apiKeyEl) cred.apiKey = apiKeyEl.value.trim();
+    if(baseUrlEl) cred.baseUrl = baseUrlEl.value.trim();
+    if(modelEl) cred.model = modelEl.value.trim();
+    if(proxyEl) cred.proxyUrl = proxyEl.value.trim();
+    if(def.needsKey && !cred.apiKey && !cred.proxyUrl){
+      toast('Entrez une clé API' + (def.supportsProxy ? ' ou une URL de proxy.' : '.'));
+      return;
+    }
+  }
+  setCred(key, cred);
+  setProvider(key);
   document.getElementById('settingsOverlay').style.display='none';
-  toast('Configuration enregistrée localement.');
+  updateProviderBadge();
+  toast('Fournisseur IA enregistré : ' + def.label);
 });
+
 document.getElementById('btnClearKey').addEventListener('click', ()=>{
-  clearApiKey();
-  clearProxyUrl();
-  document.getElementById('apiKeyInput').value='';
-  document.getElementById('proxyUrlInput').value='';
-  toast('Configuration effacée.');
+  const key = document.getElementById('providerSelect').value;
+  clearCred(key);
+  renderProviderFields();
+  toast('Identifiants effacés pour ' + PROVIDERS[key].label);
 });
+
+function updateProviderBadge(){
+  document.getElementById('providerBadge').textContent = PROVIDERS[getProvider()].label;
+}
 
 function toast(msg, isErr){
   const t = document.getElementById('toast');
@@ -541,41 +627,138 @@ function toast(msg, isErr){
   setTimeout(()=> t.className='toast', 3200);
 }
 
-// ---------------- Claude API ----------------
-async function callClaude(system, userMsg, maxTokens){
-  const key = getApiKey();
-  const proxy = getProxyUrl();
-  if(!key && !proxy){
+// ---------------- Demo mode (no AI calls) ----------------
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+function demoAnalyse(problemText){
+  const excerpt = problemText.length>140 ? problemText.slice(0,140)+'…' : problemText;
+  return {
+    reformulation: `(Exemple — mode démo) ${excerpt} Le sujet touche à la fois à l'organisation, aux délais et à la maîtrise des risques associés.`,
+    questions: [
+      "Quel est le délai maximum acceptable pour traiter ce problème ?",
+      "Qui sont les parties prenantes principales concernées ?",
+      "Existe-t-il des contraintes techniques ou de sécurité à respecter ?",
+      "Ce sujet dépend-il d'autres projets ou décisions en cours ?"
+    ]
+  };
+}
+
+function demoDiagnostic(problemText, qa){
+  const excerpt = (problemText||'').length>180 ? problemText.slice(0,180)+'…' : (problemText||'');
+  return {
+    problemStatement: `(Exemple — mode démo) ${excerpt}`,
+    objective: "(Exemple) Réduire le risque identifié et livrer un plan d'action structuré dans le délai imparti.",
+    risks: {
+      time: ["Délai serré au regard de la charge de travail estimée."],
+      security: ["Absence de revue récente des contrôles en place."],
+      dependencies: ["Dépendance à la disponibilité des parties prenantes clés."]
+    }
+  };
+}
+
+function demoBacklog(){
+  return { tasks: [
+    {title:"Cadrer le périmètre", description:"Formaliser les objectifs et les livrables attendus.", effort:1, category:'general'},
+    {title:"Identifier les parties prenantes", description:"Lister les personnes à impliquer et leur rôle.", effort:1, category:'dependencies'},
+    {title:"Cartographier les risques", description:"Recenser les risques et évaluer leur criticité.", effort:2, category:'security'},
+    {title:"Définir le calendrier cible", description:"Poser les jalons et la date de livraison visée.", effort:1, category:'time'},
+    {title:"Rédiger le plan d'action", description:"Formaliser les actions à mener, par ordre de priorité.", effort:2, category:'general'},
+    {title:"Valider avec les parties prenantes", description:"Présenter le plan et recueillir les retours.", effort:1, category:'dependencies'},
+    {title:"Mettre en œuvre les actions prioritaires", description:"Lancer les premières tâches du plan.", effort:3, category:'general'},
+    {title:"Suivre l'avancement", description:"Contrôler les indicateurs et ajuster si nécessaire.", effort:1, category:'time'},
+  ]};
+}
+
+// ---------------- AI dispatch (provider-agnostic) ----------------
+function isDemoMode(){ return getProvider()==='demo'; }
+
+async function callAI(system, userMsg, maxTokens){
+  const providerKey = getProvider();
+  const def = PROVIDERS[providerKey];
+  if(!def || def.kind==='demo'){ throw new Error('DEMO_MODE'); }
+  const cred = getCred(providerKey);
+
+  if(def.needsKey && !cred.apiKey && !(def.supportsProxy && cred.proxyUrl)){
     openSettings();
     throw new Error('NO_API_KEY');
   }
 
-  const endpoint = proxy || 'https://api.anthropic.com/v1/messages';
-  const headers = {'Content-Type':'application/json'};
-  if(!proxy){
-    headers['x-api-key'] = key;
-    headers['anthropic-version'] = '2023-06-01';
-    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+  if(def.kind==='gemini'){
+    const model = cred.model || def.defaultModel;
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cred.apiKey)}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        system_instruction: {parts:[{text:system}]},
+        contents: [{role:'user', parts:[{text:userMsg}]}],
+        generationConfig: {maxOutputTokens: maxTokens||1000}
+      })
+    });
+    if(!res.ok){
+      if(res.status===400 || res.status===401 || res.status===403){ openSettings(); throw new Error('Clé API Gemini invalide ou refusée.'); }
+      if(res.status===429){ throw new Error('Quota Gemini dépassé pour le moment, réessayez plus tard.'); }
+      throw new Error('API Gemini '+res.status);
+    }
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || '';
+    if(!text) throw new Error('Réponse Gemini vide');
+    return text;
   }
 
-  const res = await fetch(endpoint, {
-    method:'POST',
-    headers,
-    body: JSON.stringify({
-      model:'claude-sonnet-5',
-      max_tokens: maxTokens || 1000,
-      system: system,
-      messages:[{role:'user', content:userMsg}]
-    })
-  });
-  if(!res.ok){
-    if(res.status===401){ openSettings(); throw new Error('Clé API invalide ou expirée.'); }
-    throw new Error('API '+res.status);
+  if(def.kind==='openai-compat'){
+    const baseUrl = (cred.baseUrl || def.defaultBaseUrl).replace(/\/$/,'');
+    const model = cred.model || def.defaultModel;
+    const headers = {'Content-Type':'application/json'};
+    if(cred.apiKey) headers['Authorization'] = 'Bearer '+cred.apiKey;
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method:'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens||1000,
+        messages:[{role:'system', content:system},{role:'user', content:userMsg}]
+      })
+    });
+    if(!res.ok){
+      if(res.status===401 || res.status===403){ openSettings(); throw new Error('Clé API invalide ou refusée.'); }
+      throw new Error('API '+def.label+' '+res.status);
+    }
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content || '';
+    if(!text) throw new Error('Réponse vide');
+    return text;
   }
-  const data = await res.json();
-  const textBlock = (data.content || []).find(b=>b.type==='text');
-  if(!textBlock) throw new Error('Réponse vide');
-  return textBlock.text;
+
+  if(def.kind==='anthropic'){
+    const proxy = cred.proxyUrl;
+    const endpoint = proxy || 'https://api.anthropic.com/v1/messages';
+    const headers = {'Content-Type':'application/json'};
+    if(!proxy){
+      headers['x-api-key'] = cred.apiKey;
+      headers['anthropic-version'] = '2023-06-01';
+      headers['anthropic-dangerous-direct-browser-access'] = 'true';
+    }
+    const res = await fetch(endpoint, {
+      method:'POST',
+      headers,
+      body: JSON.stringify({
+        model: cred.model || def.defaultModel,
+        max_tokens: maxTokens || 1000,
+        system: system,
+        messages:[{role:'user', content:userMsg}]
+      })
+    });
+    if(!res.ok){
+      if(res.status===401){ openSettings(); throw new Error('Clé API invalide ou expirée.'); }
+      throw new Error('API '+res.status);
+    }
+    const data = await res.json();
+    const textBlock = (data.content || []).find(b=>b.type==='text');
+    if(!textBlock) throw new Error('Réponse vide');
+    return textBlock.text;
+  }
+
+  throw new Error('Fournisseur inconnu');
 }
 
 function parseJSON(raw){
@@ -660,14 +843,20 @@ document.getElementById('btnAnalyse').addEventListener('click', async ()=>{
   statusEl.style.display='flex';
   document.getElementById('btnAnalyse').disabled = true;
   try{
-    const raw = await callClaude(
-      "Tu es un consultant senior en résolution de problèmes structurée (méthode gouvernance/audit). "+
-      "On te donne un problème brut. Réponds UNIQUEMENT en JSON valide, sans texte autour, avec ce schéma exact: "+
-      '{"reformulation":"reformulation claire et professionnelle du problème en 2-3 phrases","questions":["question 1","question 2","question 3","question 4"]}'+
-      " Les questions doivent aider à clarifier le périmètre, les délais, les contraintes techniques/sécurité et les dépendances. Réponds en français.",
-      val, 700
-    );
-    const parsed = parseJSON(raw);
+    let parsed;
+    if(isDemoMode()){
+      await sleep(500);
+      parsed = demoAnalyse(val);
+    } else {
+      const raw = await callAI(
+        "Tu es un consultant senior en résolution de problèmes structurée (méthode gouvernance/audit). "+
+        "On te donne un problème brut. Réponds UNIQUEMENT en JSON valide, sans texte autour, avec ce schéma exact: "+
+        '{"reformulation":"reformulation claire et professionnelle du problème en 2-3 phrases","questions":["question 1","question 2","question 3","question 4"]}'+
+        " Les questions doivent aider à clarifier le périmètre, les délais, les contraintes techniques/sécurité et les dépendances. Réponds en français.",
+        val, 700
+      );
+      parsed = parseJSON(raw);
+    }
     state.reformulation = parsed.reformulation;
     state.questions = parsed.questions || [];
     state.qa = [];
@@ -740,14 +929,19 @@ document.getElementById('btnGenDiag').addEventListener('click', async ()=>{
   btn.textContent = 'Génération du diagnostic…';
   try{
     const qaText = state.qa.map(x=>`Q: ${x.question}\nR: ${x.answer}`).join('\n');
-    const raw = await callClaude(
-      "Tu es un consultant senior en gouvernance, audit et gestion des risques. À partir du problème et des réponses de clarification, produis un diagnostic structuré. "+
-      "Réponds UNIQUEMENT en JSON valide avec ce schéma exact: "+
-      '{"problemStatement":"reformulation finale précise du problème","objective":"objectif principal recherché, formulé comme un résultat mesurable","risks":{"time":["contrainte 1","contrainte 2"],"security":["risque 1"],"dependencies":["dépendance 1"]}}'+
-      " Chaque liste contient 1 à 3 éléments courts. Réponds en français.",
-      `Problème: ${state.reformulation}\n\n${qaText}`, 800
-    );
-    state.diagnostic = parseJSON(raw);
+    if(isDemoMode()){
+      await sleep(500);
+      state.diagnostic = demoDiagnostic(state.problem, state.qa);
+    } else {
+      const raw = await callAI(
+        "Tu es un consultant senior en gouvernance, audit et gestion des risques. À partir du problème et des réponses de clarification, produis un diagnostic structuré. "+
+        "Réponds UNIQUEMENT en JSON valide avec ce schéma exact: "+
+        '{"problemStatement":"reformulation finale précise du problème","objective":"objectif principal recherché, formulé comme un résultat mesurable","risks":{"time":["contrainte 1","contrainte 2"],"security":["risque 1"],"dependencies":["dépendance 1"]}}'+
+        " Chaque liste contient 1 à 3 éléments courts. Réponds en français.",
+        `Problème: ${state.reformulation}\n\n${qaText}`, 800
+      );
+      state.diagnostic = parseJSON(raw);
+    }
     goTo('diagnostic');
     toast('Diagnostic généré.');
   }catch(e){
@@ -787,15 +981,21 @@ document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
   document.getElementById('btnGenBacklog').disabled=true;
   try{
     const d = state.diagnostic;
-    const raw = await callClaude(
-      "Tu es un chef de projet expérimenté en méthodologie agile appliquée à des sujets de gouvernance/audit/cybersécurité. "+
-      "Décompose le problème et l'objectif suivants en 8 à 12 tâches concrètes et actionnables formant un backlog. "+
-      "Réponds UNIQUEMENT en JSON valide avec ce schéma exact: "+
-      '{"tasks":[{"title":"titre court (max 8 mots)","description":"description actionnable en 1 phrase","effort":2,"category":"time|security|dependencies|general"}]}'+
-      ' "effort" est un entier en jours-homme entre 1 et 5. Réponds en français.',
-      `Problème: ${d.problemStatement}\nObjectif: ${d.objective}\nRisques: ${JSON.stringify(d.risks)}`, 1000
-    );
-    const parsed = parseJSON(raw);
+    let parsed;
+    if(isDemoMode()){
+      await sleep(600);
+      parsed = demoBacklog();
+    } else {
+      const raw = await callAI(
+        "Tu es un chef de projet expérimenté en méthodologie agile appliquée à des sujets de gouvernance/audit/cybersécurité. "+
+        "Décompose le problème et l'objectif suivants en 8 à 12 tâches concrètes et actionnables formant un backlog. "+
+        "Réponds UNIQUEMENT en JSON valide avec ce schéma exact: "+
+        '{"tasks":[{"title":"titre court (max 8 mots)","description":"description actionnable en 1 phrase","effort":2,"category":"time|security|dependencies|general"}]}'+
+        ' "effort" est un entier en jours-homme entre 1 et 5. Réponds en français.',
+        `Problème: ${d.problemStatement}\nObjectif: ${d.objective}\nRisques: ${JSON.stringify(d.risks)}`, 1000
+      );
+      parsed = parseJSON(raw);
+    }
     const tasks = parsed.tasks || [];
     tasks.forEach(t=>{
       state.taskSeq++;
@@ -1033,6 +1233,7 @@ function renderDashboard(){
 // ---------------- Init ----------------
 (async function init(){
   await loadState();
+  updateProviderBadge();
   render();
 })();
 

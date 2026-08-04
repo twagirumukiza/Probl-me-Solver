@@ -175,6 +175,8 @@
   .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
   .btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
   .btn.small{padding:6px 12px;font-size:12px;}
+  .btn.ghost.dest-option.active{border-color:var(--accent);color:var(--accent);background:rgba(62,214,181,.08);}
+  #btnGoSettings.active{border-color:var(--accent);color:var(--accent);}
   .btn.danger{background:var(--danger);color:#1a0a05;}
 
   .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
@@ -291,6 +293,25 @@
     max-width:110px;touch-action:auto;cursor:pointer;
   }
   .assignee-select:focus{outline:none;border-color:var(--accent);}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--border-soft);}
+  .toggle-row:last-child{border-bottom:none;}
+  .toggle-row .toggle-label{font-size:13.5px;color:var(--text);font-weight:500;}
+  .toggle-row .toggle-sub{font-size:11.5px;color:var(--text-muted);margin-top:4px;line-height:1.55;max-width:440px;}
+  .switch{position:relative;width:40px;height:22px;flex-shrink:0;}
+  .switch input{opacity:0;width:0;height:0;position:absolute;}
+  .switch .slider{position:absolute;inset:0;background:var(--panel-2);border:1px solid var(--border);border-radius:22px;cursor:pointer;transition:background .15s ease;}
+  .switch .slider::before{content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;background:var(--text-dim);border-radius:50%;transition:transform .15s ease, background .15s ease;}
+  .switch input:checked + .slider{background:rgba(62,214,181,.18);border-color:var(--accent);}
+  .switch input:checked + .slider::before{transform:translateX(18px);background:var(--accent);}
+
+  body.light-theme{
+    --bg:#F4F5F1; --panel:#FFFFFF; --panel-2:#EEEFE9; --raised:#FFFFFF;
+    --border:#D6D8D0; --border-soft:#E4E5DF;
+    --text:#1B2027; --text-muted:#5B6570; --text-dim:#8A93A0;
+    --accent:#1B9C82; --accent-dim:#CDEFE6; --accent-2:#B9760F; --danger:#C33F2C;
+  }
+  body.light-theme .brand-mark .dot{background:var(--accent);}
   .chip.sprint{color:var(--accent);border-color:rgba(62,214,181,.25);}
   .card .del{position:absolute;top:8px;right:8px;color:var(--text-dim);background:none;border:none;font-size:13px;padding:2px 5px;opacity:0;transition:opacity .1s;}
   .card:hover .del{opacity:1;}
@@ -366,7 +387,7 @@
   <div class="trail" id="trail"></div>
   <div class="rail-footer" id="railFooter">Aucun dossier actif</div>
   <div class="rail-footer" style="border-top:none;padding-top:8px;">
-    <button class="btn ghost small" id="btnSettings" style="width:100%;justify-content:center;">⚙ Fournisseur IA</button>
+    <button class="btn ghost small" id="btnGoSettings" style="width:100%;justify-content:center;">⚙ Paramètres</button>
     <div id="providerBadge" style="font-family:var(--mono);font-size:9.5px;color:var(--text-dim);text-align:center;margin-top:6px;"></div>
   </div>
 </nav>
@@ -476,6 +497,11 @@
           <ul class="risk-list" id="riskDep"></ul>
         </div>
       </div>
+      <div class="row" style="margin-bottom:10px;gap:8px;">
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;">Destination des tâches</span>
+        <button class="btn ghost small dest-option active" id="destBacklogBtn" data-dest="backlog">Product Backlog</button>
+        <button class="btn ghost small dest-option" id="destSprintBtn" data-dest="sprint">Sprint actif</button>
+      </div>
       <div class="row">
         <button class="btn" id="btnGenBacklog">Générer le plan d'action (backlog + sprints)</button>
         <span id="backlogStatus" class="loading-line" style="display:none;"><span class="spin"></span>Décomposition en tâches…</span>
@@ -538,6 +564,43 @@
     </div>
   </section>
 
+  <!-- PARAMÈTRES -->
+  <section class="view" data-view="settings">
+    <div class="eyebrow">Paramètres</div>
+    <h1>Paramètres</h1>
+    <p class="lede">Automatisations et préférences d'affichage de SolveFlow.</p>
+
+    <div class="panel">
+      <div class="panel-title">Fournisseur IA</div>
+      <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 12px;">
+        Fournisseur actif : <strong id="settingsProviderLabel" style="color:var(--text);"></strong>
+      </p>
+      <button class="btn ghost small" id="btnOpenProviderFromSettings">Changer de fournisseur</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Automatisation</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Basculer automatiquement vers Done</div>
+          <div class="toggle-sub">Dès que toutes les cases de la Definition of Done d'un ticket sont cochées, il est déplacé automatiquement dans la colonne Done du Kanban.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="autoCompleteToggle"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Apparence</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Thème clair</div>
+          <div class="toggle-sub">Bascule l'interface vers un fond clair plutôt que sombre.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="lightThemeToggle"><span class="slider"></span></label>
+      </div>
+    </div>
+  </section>
+
   <footer style="margin-top:32px;padding-top:18px;border-top:1px solid var(--border-soft);text-align:center;font-family:var(--mono);font-size:10.5px;color:var(--text-dim);letter-spacing:.05em;">
     SolveFlow · by twagirumukiza
   </footer>
@@ -592,6 +655,7 @@ let state = {
   problemSeq:0,
   collabSeq:0,
   kanbanFilterProblemId:null,
+  settings:{ autoCompleteOnDod:false, lightTheme:false },
 };
 
 function activeProblem(){
@@ -625,6 +689,7 @@ async function loadState(){
     if(raw){
       const parsed = JSON.parse(raw);
       state = Object.assign(state, parsed);
+      state.settings = Object.assign({autoCompleteOnDod:false, lightTheme:false}, state.settings||{});
     }
   }catch(e){ /* no saved state yet */ }
 
@@ -730,7 +795,6 @@ function openSettings(){
   renderProviderFields();
   document.getElementById('settingsOverlay').style.display='flex';
 }
-document.getElementById('btnSettings').addEventListener('click', openSettings);
 document.getElementById('btnCloseSettings').addEventListener('click', ()=> document.getElementById('settingsOverlay').style.display='none');
 
 document.getElementById('btnSaveKey').addEventListener('click', ()=>{
@@ -975,12 +1039,36 @@ function renderTrail(){
 function render(){
   document.querySelectorAll('.view').forEach(v=> v.classList.toggle('active', v.dataset.view===state.stage));
   renderTrail();
+  document.getElementById('btnGoSettings').classList.toggle('active', state.stage==='settings');
   if(state.stage==='analyse') renderAnalyse();
   if(state.stage==='assistant') renderAssistant();
   if(state.stage==='diagnostic') renderDiagnostic();
   if(state.stage==='kanban') renderKanban();
   if(state.stage==='calendrier') renderCalendar();
   if(state.stage==='dashboard') renderDashboard();
+  if(state.stage==='settings') renderSettingsPage();
+}
+
+// ---------------- Paramètres ----------------
+document.getElementById('btnGoSettings').addEventListener('click', ()=>{
+  state.stage = 'settings';
+  render();
+  saveState();
+});
+document.getElementById('btnOpenProviderFromSettings').addEventListener('click', openSettings);
+document.getElementById('autoCompleteToggle').addEventListener('change', e=>{
+  state.settings.autoCompleteOnDod = e.target.checked;
+  saveState();
+});
+document.getElementById('lightThemeToggle').addEventListener('change', e=>{
+  state.settings.lightTheme = e.target.checked;
+  document.body.classList.toggle('light-theme', state.settings.lightTheme);
+  saveState();
+});
+function renderSettingsPage(){
+  document.getElementById('settingsProviderLabel').textContent = PROVIDERS[getProvider()].label;
+  document.getElementById('autoCompleteToggle').checked = !!state.settings.autoCompleteOnDod;
+  document.getElementById('lightThemeToggle').checked = !!state.settings.lightTheme;
 }
 
 // ---------------- 1. Analyse ----------------
@@ -1191,6 +1279,18 @@ function renderDiagnostic(){
   document.getElementById('btnGenBacklog').style.display = hasTasksForThisProblem ? 'none' : 'inline-flex';
 }
 
+let backlogDestination = 'backlog';
+document.getElementById('destBacklogBtn').addEventListener('click', ()=>{
+  backlogDestination = 'backlog';
+  document.getElementById('destBacklogBtn').classList.add('active');
+  document.getElementById('destSprintBtn').classList.remove('active');
+});
+document.getElementById('destSprintBtn').addEventListener('click', ()=>{
+  backlogDestination = 'sprint';
+  document.getElementById('destSprintBtn').classList.add('active');
+  document.getElementById('destBacklogBtn').classList.remove('active');
+});
+
 document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
   const p = ensureActiveProblem();
   const statusEl = document.getElementById('backlogStatus');
@@ -1215,10 +1315,13 @@ document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
       parsed = parseJSON(raw);
     }
     const tasks = parsed.tasks || [];
+    const newTaskIds = [];
     tasks.forEach(t=>{
       state.taskSeq++;
+      const id = 'TSK-'+String(state.taskSeq).padStart(3,'0');
+      newTaskIds.push(id);
       state.tasks.push({
-        id:'TSK-'+String(state.taskSeq).padStart(3,'0'),
+        id,
         title:t.title, description:t.description,
         effort: nearestFibonacci(t.effort || 3),
         category: t.category || 'general',
@@ -1228,8 +1331,14 @@ document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
       });
     });
     autoScheduleSprints();
+    if(backlogDestination==='sprint'){
+      newTaskIds.forEach(id=>{
+        const t = state.tasks.find(x=>x.id===id);
+        if(t) t.status = 'sprint';
+      });
+    }
     goTo('kanban');
-    toast('Backlog généré et organisé en sprints.');
+    toast(backlogDestination==='sprint' ? 'Backlog généré et lancé directement en Sprint.' : 'Backlog généré et organisé en sprints.');
   }catch(e){
     console.error(e);
     if(e.message!=='NO_API_KEY') toast('Erreur lors de la génération du backlog.', true);
@@ -1384,7 +1493,13 @@ function renderKanban(){
           item.checked = cb.checked;
           cb.closest('li').classList.toggle('checked', cb.checked);
           updateDodCount(c, t);
-          saveState();
+          if(maybeAutoCompleteFromDod(t)){
+            saveState();
+            toast(`${t.id} basculé automatiquement vers Done (DoD complète).`);
+            renderKanban();
+          } else {
+            saveState();
+          }
         }
       });
     });
@@ -1417,7 +1532,13 @@ function renderKanban(){
         item.checked = e.target.checked;
         li.classList.toggle('checked', e.target.checked);
         updateDodCount(c, t);
-        saveState();
+        if(maybeAutoCompleteFromDod(t)){
+          saveState();
+          toast(`${t.id} basculé automatiquement vers Done (DoD complète).`);
+          renderKanban();
+        } else {
+          saveState();
+        }
       });
       li.querySelector('.dod-del').addEventListener('click', ()=>{
         t.dod = (t.dod||[]).filter(d=>d.id!==item.id);
@@ -1442,6 +1563,20 @@ function renderKanban(){
     const checked = dod.filter(d=>d.checked).length;
     countEl.textContent = `${checked}/${total}`;
     countEl.classList.toggle('complete', total>0 && checked===total);
+  }
+
+  // Returns true if the task was auto-moved to Done because all DoD items are checked.
+  function maybeAutoCompleteFromDod(task){
+    if(!state.settings.autoCompleteOnDod || !task) return false;
+    const dod = task.dod || [];
+    if(dod.length===0) return false;
+    const alreadyFinished = task.status==='done' || task.status==='increment';
+    if(alreadyFinished) return false;
+    const allChecked = dod.every(d=>d.checked);
+    if(!allChecked) return false;
+    task.status = 'done';
+    task.completedAt = new Date().toISOString();
+    return true;
   }
 
   document.getElementById('quickAddBtn')?.addEventListener('click', ()=>{
@@ -1854,6 +1989,7 @@ function renderDashboard(){
 // ---------------- Init ----------------
 (async function init(){
   await loadState();
+  document.body.classList.toggle('light-theme', !!state.settings.lightTheme);
   updateProviderBadge();
   render();
 })();

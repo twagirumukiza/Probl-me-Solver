@@ -546,7 +546,7 @@
     <div class="row" style="margin-bottom:16px;">
       <button class="btn ghost small" id="btnPlanSprint">Planifier le sprint suivant</button>
       <button class="btn ghost small" id="btnCloseSprint">Clôturer le sprint actif</button>
-      <button class="btn ghost small" id="btnClearIncrement" style="color:var(--danger);border-color:rgba(231,111,81,.35);">🗑 Vider l'Increment</button>
+      <button class="btn ghost small" id="btnClearIncrement" style="color:var(--danger);border-color:rgba(231,111,81,.35);" title="Supprime tout le dossier concerné, pas seulement l'Increment">🗑 Vider l'Increment (dossier)</button>
       <span class="spacer"></span>
       <span id="activeSprintTag" class="chip sprint" style="display:none;"></span>
     </div>
@@ -1022,17 +1022,28 @@ async function callAI(system, userMsg, maxTokens){
       body: JSON.stringify({
         system_instruction: {parts:[{text:system}]},
         contents: [{role:'user', parts:[{text:userMsg}]}],
-        generationConfig: {maxOutputTokens: maxTokens||1000}
+        generationConfig: {
+          maxOutputTokens: maxTokens||1000,
+          thinkingConfig: {thinkingBudget: 0}
+        }
       })
     });
     if(!res.ok){
-      if(res.status===400 || res.status===401 || res.status===403){ openSettings(); throw new Error('Clé API Gemini invalide ou refusée.'); }
-      if(res.status===429){ throw new Error('Quota Gemini dépassé pour le moment, réessayez plus tard.'); }
-      throw new Error('API Gemini '+res.status);
+      let apiMsg = '';
+      try{ const errBody = await res.json(); apiMsg = errBody?.error?.message || ''; }catch(e){ /* ignore */ }
+      if(res.status===401 || res.status===403){ openSettings(); throw new Error('Clé API Gemini invalide ou refusée.'); }
+      if(res.status===429){ throw new Error('Quota Gemini dépassé (limite gratuite atteinte) — patientez une minute puis réessayez.'); }
+      throw new Error(apiMsg ? `Gemini (${res.status}) : ${apiMsg}` : ('API Gemini '+res.status));
     }
     const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || '';
-    if(!text) throw new Error('Réponse Gemini vide');
+    const candidate = data?.candidates?.[0];
+    const text = candidate?.content?.parts?.map(p=>p.text).join('') || '';
+    if(!text){
+      const reason = candidate?.finishReason;
+      if(reason==='SAFETY') throw new Error('Réponse bloquée par les filtres de sécurité Gemini.');
+      if(reason==='MAX_TOKENS') throw new Error('Réponse Gemini tronquée (budget de tokens insuffisant).');
+      throw new Error('Réponse Gemini vide' + (reason ? ` (${reason})` : ''));
+    }
     return text;
   }
 
@@ -1289,7 +1300,7 @@ document.getElementById('btnAnalyse').addEventListener('click', async ()=>{
     toast('Reformulation générée.');
   }catch(e){
     console.error(e);
-    if(e.message!=='NO_API_KEY') toast("Erreur lors de l'analyse IA. Réessayez.", true);
+    if(e.message!=='NO_API_KEY') toast(`Erreur lors de l'analyse IA : ${e.message||'réessayez.'}`, true);
   }finally{
     statusEl.style.display='none';
     document.getElementById('btnAnalyse').disabled=false;
@@ -1372,7 +1383,7 @@ document.getElementById('btnGenDiag').addEventListener('click', async ()=>{
     toast('Diagnostic généré.');
   }catch(e){
     console.error(e);
-    if(e.message!=='NO_API_KEY') toast('Erreur lors de la génération du diagnostic.', true);
+    if(e.message!=='NO_API_KEY') toast(`Erreur lors de la génération du diagnostic : ${e.message||'réessayez.'}`, true);
   }finally{
     btn.disabled=false;
     btn.textContent='Valider et générer le diagnostic';
@@ -1465,7 +1476,7 @@ document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
     toast(backlogDestination==='sprint' ? 'Backlog généré et lancé directement en Sprint.' : 'Backlog généré et organisé en sprints.');
   }catch(e){
     console.error(e);
-    if(e.message!=='NO_API_KEY') toast('Erreur lors de la génération du backlog.', true);
+    if(e.message!=='NO_API_KEY') toast(`Erreur lors de la génération du backlog : ${e.message||'réessayez.'}`, true);
   }finally{
     statusEl.style.display='none';
     document.getElementById('btnGenBacklog').disabled=false;
@@ -2014,16 +2025,25 @@ document.getElementById('btnCloseSprint').addEventListener('click', ()=>{
 
 document.getElementById('btnClearIncrement').addEventListener('click', ()=>{
   const filterId = state.kanbanFilterProblemId;
-  const targets = state.tasks.filter(t=> t.status==='increment' && (!filterId || t.problemId===filterId));
-  if(targets.length===0){ toast("Aucun ticket dans l'Increment à supprimer."); return; }
-  const scopeLabel = filterId ? `du dossier "${(state.problems.find(p=>p.id===filterId)||{}).name||''}"` : 'de tous les dossiers';
+  const incrementTasks = state.tasks.filter(t=> t.status==='increment' && (!filterId || t.problemId===filterId));
+  if(incrementTasks.length===0){ toast("Aucun ticket dans l'Increment à traiter."); return; }
+
+  const targetProblemIds = [...new Set(incrementTasks.map(t=>t.problemId))];
+  const targetProblems = targetProblemIds.map(id=> state.problems.find(p=>p.id===id)).filter(Boolean);
+  const allTasksToDelete = state.tasks.filter(t=> targetProblemIds.includes(t.problemId));
+  const namesLabel = targetProblems.map(p=>`"${p.name}"`).join(', ');
+
   confirmPermanentDelete(
-    `Supprimer définitivement les ${targets.length} ticket(s) en Increment ${scopeLabel} ? Cette action est irréversible.`,
+    `Vider l'Increment supprime définitivement tout le dossier concerné, pas seulement l'Increment : ${namesLabel} — ${allTasksToDelete.length} ticket(s) au total (toutes colonnes confondues). Le(s) dossier(s) disparaîtra(ont) de la liste. Continuer ?`,
     ()=>{
-      const ids = new Set(targets.map(t=>t.id));
-      state.tasks = state.tasks.filter(t=>!ids.has(t.id));
+      const idsToDelete = new Set(allTasksToDelete.map(t=>t.id));
+      state.tasks = state.tasks.filter(t=>!idsToDelete.has(t.id));
+      state.problems = state.problems.filter(p=>!targetProblemIds.includes(p.id));
+      if(targetProblemIds.includes(state.kanbanFilterProblemId)) state.kanbanFilterProblemId = null;
+      if(targetProblemIds.includes(state.activeProblemId)) state.activeProblemId = null;
+      ensureActiveProblem();
       saveState(); renderKanban(); renderTrail();
-      toast(`${targets.length} ticket(s) supprimé(s) de l'Increment.`);
+      toast(`${namesLabel} supprimé(s) définitivement (${allTasksToDelete.length} ticket(s)).`);
     }
   );
 });

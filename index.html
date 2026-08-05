@@ -287,6 +287,15 @@
   .problem-pill .color-dot::-webkit-color-swatch{border:none;border-radius:50%;}
   .problem-pill .color-dot::-moz-color-swatch{border:none;border-radius:50%;}
 
+  .pill-icon-btn{
+    background:none;border:none;color:var(--text-dim);font-size:11px;padding:1px 3px;
+    cursor:pointer;line-height:1;touch-action:auto;border-radius:4px;
+  }
+  .pill-icon-btn:hover{color:var(--accent);background:rgba(62,214,181,.1);}
+  .pill-icon-btn.danger:hover{color:var(--danger);background:rgba(231,111,81,.12);}
+  .problem-pill.archived-pill{opacity:.55;border-style:dashed;}
+  .problem-pill.archived-pill.active{opacity:1;}
+
   .assignee-select{
     font-family:var(--body);font-size:10.5px;padding:2px 6px;border-radius:4px;
     background:var(--panel);border:1px solid var(--border-soft);color:var(--text-muted);
@@ -430,6 +439,18 @@
   </div>
 </div>
 
+<div id="deleteConfirmOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,13,.75);z-index:70;align-items:center;justify-content:center;">
+  <div class="panel" style="width:420px;max-width:92vw;border-color:rgba(231,111,81,.4);">
+    <div class="panel-title" style="color:var(--danger);">Suppression définitive</div>
+    <p id="deleteConfirmMessage" style="font-size:13px;line-height:1.65;color:var(--text);margin-top:0;"></p>
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:16px;">
+      <button class="btn" id="btnExportThenDelete">Exporter puis supprimer</button>
+      <button class="btn danger" id="btnDeleteWithoutExport">Supprimer sans exporter</button>
+      <button class="btn ghost" id="btnCancelDelete">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <main class="main">
 
   <!-- 1. ANALYSE -->
@@ -525,6 +546,7 @@
     <div class="row" style="margin-bottom:16px;">
       <button class="btn ghost small" id="btnPlanSprint">Planifier le sprint suivant</button>
       <button class="btn ghost small" id="btnCloseSprint">Clôturer le sprint actif</button>
+      <button class="btn ghost small" id="btnClearIncrement" style="color:var(--danger);border-color:rgba(231,111,81,.35);">🗑 Vider l'Increment</button>
       <span class="spacer"></span>
       <span id="activeSprintTag" class="chip sprint" style="display:none;"></span>
     </div>
@@ -707,6 +729,7 @@ let state = {
   problemSeq:0,
   collabSeq:0,
   kanbanFilterProblemId:null,
+  showArchived:false,
   settings:{ autoCompleteOnDod:false, lightTheme:false, sprintLengthDays:14, sprintCapacity:20 },
 };
 
@@ -720,7 +743,8 @@ function createProblem(){
     id:'PB-'+String(state.problemSeq).padStart(2,'0'),
     name:'Problème '+state.problemSeq,
     color: PROBLEM_COLORS[(state.problemSeq-1) % PROBLEM_COLORS.length],
-    problem:'', reformulation:'', questions:[], qa:[], qaIndex:0, diagnostic:null
+    problem:'', reformulation:'', questions:[], qa:[], qaIndex:0, diagnostic:null,
+    archived:false
   };
   state.problems.push(p);
   state.activeProblemId = p.id;
@@ -729,7 +753,7 @@ function createProblem(){
 
 function ensureActiveProblem(){
   if(state.problems.length===0) createProblem();
-  if(!activeProblem()) state.activeProblemId = state.problems[0].id;
+  if(!activeProblem()) state.activeProblemId = state.problems.find(p=>!p.archived)?.id || state.problems[0].id;
   return activeProblem();
 }
 
@@ -756,6 +780,7 @@ function normalizeState(){
     state.tasks.forEach(t=>{ if(!t.problemId) t.problemId = 'PB-01'; });
   }
   ensureActiveProblem();
+  state.problems.forEach(p=>{ if(p.archived===undefined) p.archived = false; });
   state.tasks.forEach(t=>{
     if(t.problemId===undefined) t.problemId = state.activeProblemId;
     if(t.assignee===undefined) t.assignee = null;
@@ -857,6 +882,30 @@ function openSettings(){
   document.getElementById('settingsOverlay').style.display='flex';
 }
 document.getElementById('btnCloseSettings').addEventListener('click', ()=> document.getElementById('settingsOverlay').style.display='none');
+
+// ---------------- Reusable permanent-delete confirmation (always offers export first) ----------------
+let pendingDeleteAction = null;
+function confirmPermanentDelete(message, onDelete){
+  pendingDeleteAction = onDelete;
+  document.getElementById('deleteConfirmMessage').textContent = message;
+  document.getElementById('deleteConfirmOverlay').style.display = 'flex';
+}
+function closeDeleteConfirm(){
+  document.getElementById('deleteConfirmOverlay').style.display = 'none';
+  pendingDeleteAction = null;
+}
+document.getElementById('btnExportThenDelete').addEventListener('click', ()=>{
+  exportJSON();
+  const action = pendingDeleteAction;
+  closeDeleteConfirm();
+  if(action) action();
+});
+document.getElementById('btnDeleteWithoutExport').addEventListener('click', ()=>{
+  const action = pendingDeleteAction;
+  closeDeleteConfirm();
+  if(action) action();
+});
+document.getElementById('btnCancelDelete').addEventListener('click', closeDeleteConfirm);
 
 document.getElementById('btnSaveKey').addEventListener('click', ()=>{
   const key = document.getElementById('providerSelect').value;
@@ -1149,7 +1198,7 @@ function renderSettingsPage(){
 // ---------------- 1. Analyse ----------------
 function renderProblemPills(){
   const box = document.getElementById('problemPills');
-  box.innerHTML = state.problems.map(p=>{
+  box.innerHTML = state.problems.filter(p=>!p.archived).map(p=>{
     const isActive = p.id===state.activeProblemId;
     return `<span class="problem-pill ${isActive?'active':''}" data-pid="${p.id}">
       <input type="color" class="color-dot" value="${p.color}" data-pid="${p.id}" title="Choisir une couleur">
@@ -1483,19 +1532,84 @@ function activeSprint(){
 
 function renderKanbanFilterRow(){
   const box = document.getElementById('kanbanFilterRow');
+  const visible = state.problems.filter(p=>!p.archived);
+  const archived = state.problems.filter(p=>p.archived);
+
   const all = `<span class="problem-pill ${!state.kanbanFilterProblemId?'active':''}" data-filter="all">Tous les dossiers</span>`;
-  const pills = state.problems.map(p=>{
+  const pills = visible.map(p=>{
     const count = state.tasks.filter(t=>t.problemId===p.id).length;
     return `<span class="problem-pill ${state.kanbanFilterProblemId===p.id?'active':''}" data-filter="${p.id}">
       <span class="sw" style="background:${p.color}"></span>${escapeHtml(p.name)} <span style="color:var(--text-dim);">(${count})</span>
+      <button class="pill-icon-btn" data-action="archive" data-pid="${p.id}" title="Archiver ce dossier (masque ses tickets, conserve les données)">🗄</button>
+      <button class="pill-icon-btn danger" data-action="delete" data-pid="${p.id}" title="Supprimer définitivement ce dossier et ses tickets">🗑</button>
     </span>`;
   }).join('');
-  box.innerHTML = all + pills;
+
+  let archivedRow = '';
+  if(archived.length>0){
+    const archivedPills = state.showArchived ? archived.map(p=>{
+      const count = state.tasks.filter(t=>t.problemId===p.id).length;
+      return `<span class="problem-pill archived-pill ${state.kanbanFilterProblemId===p.id?'active':''}" data-filter="${p.id}">
+        <span class="sw" style="background:${p.color}"></span>${escapeHtml(p.name)} <span style="color:var(--text-dim);">(${count}) · archivé</span>
+        <button class="pill-icon-btn" data-action="unarchive" data-pid="${p.id}" title="Désarchiver ce dossier">↩</button>
+        <button class="pill-icon-btn danger" data-action="delete" data-pid="${p.id}" title="Supprimer définitivement ce dossier et ses tickets">🗑</button>
+      </span>`;
+    }).join('') : '';
+    archivedRow = `<button class="btn ghost small" id="btnToggleArchived">${state.showArchived ? 'Masquer les archivés' : `Afficher les archivés (${archived.length})`}</button>${archivedPills}`;
+  }
+
+  box.innerHTML = all + pills + archivedRow;
+
   box.querySelectorAll('.problem-pill').forEach(el=>{
-    el.addEventListener('click', ()=>{
+    el.addEventListener('click', (e)=>{
+      if(e.target.closest('.pill-icon-btn')) return;
       state.kanbanFilterProblemId = el.dataset.filter==='all' ? null : el.dataset.filter;
       renderKanban(); saveState();
     });
+  });
+
+  box.querySelectorAll('.pill-icon-btn').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const pid = btn.dataset.pid;
+      const p = state.problems.find(x=>x.id===pid);
+      if(!p) return;
+      const action = btn.dataset.action;
+
+      if(action==='archive'){
+        p.archived = true;
+        if(state.kanbanFilterProblemId===pid) state.kanbanFilterProblemId = null;
+        if(state.activeProblemId===pid) state.activeProblemId = null;
+        ensureActiveProblem();
+        saveState(); renderKanban();
+        toast(`"${p.name}" archivé — ses tickets sont masqués du tableau mais conservés.`);
+      }
+      if(action==='unarchive'){
+        p.archived = false;
+        saveState(); renderKanban();
+        toast(`"${p.name}" désarchivé.`);
+      }
+      if(action==='delete'){
+        const count = state.tasks.filter(t=>t.problemId===pid).length;
+        confirmPermanentDelete(
+          `Supprimer définitivement le dossier "${p.name}" et ses ${count} ticket(s) ? Cette action est irréversible.`,
+          ()=>{
+            state.tasks = state.tasks.filter(t=>t.problemId!==pid);
+            state.problems = state.problems.filter(x=>x.id!==pid);
+            if(state.kanbanFilterProblemId===pid) state.kanbanFilterProblemId = null;
+            if(state.activeProblemId===pid) state.activeProblemId = null;
+            ensureActiveProblem();
+            saveState(); renderKanban(); renderTrail();
+            toast(`Dossier "${p.name}" supprimé définitivement.`);
+          }
+        );
+      }
+    });
+  });
+
+  document.getElementById('btnToggleArchived')?.addEventListener('click', ()=>{
+    state.showArchived = !state.showArchived;
+    saveState(); renderKanban();
   });
 }
 
@@ -1503,8 +1617,13 @@ function renderKanban(){
   renderKanbanFilterRow();
   const board = document.getElementById('board');
   const filterId = state.kanbanFilterProblemId;
+  const archivedIds = new Set(state.problems.filter(p=>p.archived).map(p=>p.id));
   board.innerHTML = COLUMNS.map(col=>{
-    const items = state.tasks.filter(t=> t.status===col.key && (!filterId || t.problemId===filterId));
+    const items = state.tasks.filter(t=>{
+      if(t.status!==col.key) return false;
+      if(filterId) return t.problemId===filterId;
+      return !archivedIds.has(t.problemId);
+    });
     return `<div class="col" data-col="${col.key}">
       <div class="col-head"><span class="col-dot" style="background:${col.dot}"></span><span class="col-title">${col.label}</span><span class="col-count">${items.length}</span></div>
       <div class="col-body" data-col="${col.key}">
@@ -1891,6 +2010,22 @@ document.getElementById('btnCloseSprint').addEventListener('click', ()=>{
   renderKanban(); saveState(); renderTrail();
   toast(as.name + ' clôturé. ' + validatedTasks.length + ' tâche(s) validée(s) intégrée(s) à l\'increment.'
     + (unvalidatedCount>0 ? ` ${unvalidatedCount} ticket(s) Done non validé(s) restent en attente.` : ''));
+});
+
+document.getElementById('btnClearIncrement').addEventListener('click', ()=>{
+  const filterId = state.kanbanFilterProblemId;
+  const targets = state.tasks.filter(t=> t.status==='increment' && (!filterId || t.problemId===filterId));
+  if(targets.length===0){ toast("Aucun ticket dans l'Increment à supprimer."); return; }
+  const scopeLabel = filterId ? `du dossier "${(state.problems.find(p=>p.id===filterId)||{}).name||''}"` : 'de tous les dossiers';
+  confirmPermanentDelete(
+    `Supprimer définitivement les ${targets.length} ticket(s) en Increment ${scopeLabel} ? Cette action est irréversible.`,
+    ()=>{
+      const ids = new Set(targets.map(t=>t.id));
+      state.tasks = state.tasks.filter(t=>!ids.has(t.id));
+      saveState(); renderKanban(); renderTrail();
+      toast(`${targets.length} ticket(s) supprimé(s) de l'Increment.`);
+    }
+  );
 });
 
 // ---------------- 5. Calendar ----------------

@@ -579,6 +579,31 @@
     </div>
 
     <div class="panel">
+      <div class="panel-title">Planification des sprints</div>
+      <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 14px;">S'applique aux prochains sprints générés (les sprints déjà créés conservent leurs dates et capacité d'origine).</p>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Durée d'un sprint</div>
+          <div class="toggle-sub">Nombre de jours calendaires par sprint.</div>
+        </div>
+        <div class="row" style="gap:6px;">
+          <input type="number" class="field" id="sprintLengthInput" min="1" max="60" style="width:70px;padding:8px 10px;">
+          <span style="font-size:12px;color:var(--text-dim);">jours</span>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Capacité d'un sprint</div>
+          <div class="toggle-sub">Nombre de points d'effort (Fibonacci) qu'un sprint peut absorber.</div>
+        </div>
+        <div class="row" style="gap:6px;">
+          <input type="number" class="field" id="sprintCapacityInput" min="1" max="200" style="width:70px;padding:8px 10px;">
+          <span style="font-size:12px;color:var(--text-dim);">pts</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-title">Automatisation</div>
       <div class="toggle-row">
         <div>
@@ -674,7 +699,7 @@ let state = {
   problemSeq:0,
   collabSeq:0,
   kanbanFilterProblemId:null,
-  settings:{ autoCompleteOnDod:false, lightTheme:false },
+  settings:{ autoCompleteOnDod:false, lightTheme:false, sprintLengthDays:14, sprintCapacity:20 },
 };
 
 function activeProblem(){
@@ -703,7 +728,7 @@ function ensureActiveProblem(){
 const STORAGE_KEY = 'solveflow:v2:state';
 
 function normalizeState(){
-  state.settings = Object.assign({autoCompleteOnDod:false, lightTheme:false}, state.settings||{});
+  state.settings = Object.assign({autoCompleteOnDod:false, lightTheme:false, sprintLengthDays:14, sprintCapacity:20}, state.settings||{});
   state.problems = state.problems || [];
   state.tasks = state.tasks || [];
   state.sprints = state.sprints || [];
@@ -1092,10 +1117,24 @@ document.getElementById('lightThemeToggle').addEventListener('change', e=>{
   document.body.classList.toggle('light-theme', state.settings.lightTheme);
   saveState();
 });
+document.getElementById('sprintLengthInput').addEventListener('change', e=>{
+  const v = Math.max(1, Math.min(60, Math.round(Number(e.target.value)) || 14));
+  e.target.value = v;
+  state.settings.sprintLengthDays = v;
+  saveState();
+});
+document.getElementById('sprintCapacityInput').addEventListener('change', e=>{
+  const v = Math.max(1, Math.min(200, Math.round(Number(e.target.value)) || 20));
+  e.target.value = v;
+  state.settings.sprintCapacity = v;
+  saveState();
+});
 function renderSettingsPage(){
   document.getElementById('settingsProviderLabel').textContent = PROVIDERS[getProvider()].label;
   document.getElementById('autoCompleteToggle').checked = !!state.settings.autoCompleteOnDod;
   document.getElementById('lightThemeToggle').checked = !!state.settings.lightTheme;
+  document.getElementById('sprintLengthInput').value = state.settings.sprintLengthDays;
+  document.getElementById('sprintCapacityInput').value = state.settings.sprintCapacity;
 }
 
 // ---------------- 1. Analyse ----------------
@@ -1377,8 +1416,8 @@ document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
 });
 
 // ---------------- Sprint scheduling ----------------
-const SPRINT_CAPACITY = 20; // points d'effort (Fibonacci) par sprint
-const SPRINT_LENGTH_DAYS = 14;
+function sprintCapacity(){ return Number(state.settings.sprintCapacity) || 20; }
+function sprintLengthDays(){ return Number(state.settings.sprintLengthDays) || 14; }
 
 function nextMonday(from){
   const d = new Date(from);
@@ -1395,6 +1434,8 @@ function fmtDate(d){
 function autoScheduleSprints(){
   const unplanned = state.tasks.filter(t=> t.sprint===null);
   if(unplanned.length===0) return;
+  const lengthDays = sprintLengthDays();
+  const capacityLimit = sprintCapacity();
   let cursor = state.sprints.length ? new Date(state.sprints[state.sprints.length-1].end) : nextMonday(new Date());
   if(state.sprints.length){ cursor = new Date(cursor); cursor.setDate(cursor.getDate()+1); }
 
@@ -1402,9 +1443,9 @@ function autoScheduleSprints(){
   while(i < unplanned.length){
     state.sprintSeq++;
     const start = new Date(cursor);
-    const end = new Date(cursor); end.setDate(end.getDate()+SPRINT_LENGTH_DAYS-1);
+    const end = new Date(cursor); end.setDate(end.getDate()+lengthDays-1);
     const sprintId = 'SPR-'+String(state.sprintSeq).padStart(2,'0');
-    let capacity = SPRINT_CAPACITY;
+    let capacity = capacityLimit;
     const assigned = [];
     while(i<unplanned.length && (capacity>0 || assigned.length===0)){
       const t = unplanned[i];
@@ -2096,7 +2137,7 @@ function importJSONFile(file){
     state = Object.assign({
       stage:'analyse', problems:[], activeProblemId:null, collaborators:[], tasks:[], sprints:[],
       taskSeq:0, sprintSeq:0, dodSeq:0, problemSeq:0, collabSeq:0, kanbanFilterProblemId:null,
-      settings:{autoCompleteOnDod:false, lightTheme:false}
+      settings:{autoCompleteOnDod:false, lightTheme:false, sprintLengthDays:14, sprintCapacity:20}
     }, parsed);
     normalizeState();
     document.body.classList.toggle('light-theme', !!state.settings.lightTheme);

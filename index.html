@@ -324,6 +324,14 @@
     opacity:.85;
   }
 
+  .validated-row{
+    display:flex;align-items:center;gap:7px;margin-top:8px;padding:7px 9px;
+    background:rgba(232,169,60,.07);border:1px solid rgba(232,169,60,.3);border-radius:6px;
+    font-size:11.5px;color:var(--accent-2);cursor:pointer;touch-action:auto;user-select:none;
+  }
+  .validated-row input{accent-color:var(--accent-2);cursor:pointer;}
+  .validated-row:has(input:checked){background:rgba(62,214,181,.09);border-color:var(--accent);color:var(--accent);}
+
   .add-task-row{display:flex;gap:6px;padding:8px;border-top:1px solid var(--border-soft);}
   .add-task-row input{flex:1;background:var(--panel);border:1px solid var(--border-soft);border-radius:6px;padding:7px 9px;color:var(--text);font-size:12px;}
   .add-task-row button{background:var(--panel);border:1px solid var(--border-soft);color:var(--text-muted);border-radius:6px;padding:0 10px;font-size:14px;}
@@ -607,8 +615,8 @@
       <div class="panel-title">Automatisation</div>
       <div class="toggle-row">
         <div>
-          <div class="toggle-label">Basculer automatiquement vers Done</div>
-          <div class="toggle-sub">Dès que toutes les cases de la Definition of Done d'un ticket sont cochées, il est déplacé automatiquement dans la colonne Done du Kanban.</div>
+          <div class="toggle-label">Basculer automatiquement les tickets</div>
+          <div class="toggle-sub">Dès que toutes les cases DoD d'un ticket sont cochées, il passe automatiquement en Done. Dès que la case "Validé" (revue de sprint) est cochée sur un ticket Done, il passe automatiquement en Increment.</div>
         </div>
         <label class="switch"><input type="checkbox" id="autoCompleteToggle"><span class="slider"></span></label>
       </div>
@@ -752,6 +760,7 @@ function normalizeState(){
     if(t.problemId===undefined) t.problemId = state.activeProblemId;
     if(t.assignee===undefined) t.assignee = null;
     if(!Array.isArray(t.dod)) t.dod = [];
+    if(t.validated===undefined) t.validated = (t.status==='increment');
   });
 }
 
@@ -1393,7 +1402,7 @@ document.getElementById('btnGenBacklog').addEventListener('click', async ()=>{
         category: t.category || 'general',
         status:'backlog', sprint:null, completedAt:null,
         dod: makeDodList(t.dod),
-        problemId: p.id, assignee: null
+        problemId: p.id, assignee: null, validated: false
       });
     });
     autoScheduleSprints();
@@ -1541,6 +1550,23 @@ function renderKanban(){
       }
     });
 
+    // ---- Validé (revue de sprint) ----
+    const validatedRow = c.querySelector('.validated-row');
+    validatedRow?.addEventListener('pointerdown', e=> e.stopPropagation());
+    validatedRow?.querySelector('.validated-checkbox')?.addEventListener('change', e=>{
+      const t = state.tasks.find(x=>x.id===c.dataset.id);
+      if(!t) return;
+      t.validated = e.target.checked;
+      if(t.validated && state.settings.autoCompleteOnDod){
+        t.status = 'increment';
+        saveState();
+        toast(`${t.id} basculé automatiquement vers Increment (validé).`);
+        renderKanban();
+      } else {
+        saveState();
+      }
+    });
+
     // ---- Definition of Done ----
     const toggle = c.querySelector('.dod-toggle');
     const panel = c.querySelector('.dod-panel');
@@ -1653,7 +1679,7 @@ function renderKanban(){
     if(!val) return;
     const p = ensureActiveProblem();
     state.taskSeq++;
-    state.tasks.push({id:'TSK-'+String(state.taskSeq).padStart(3,'0'), title:val, description:'', effort:1, category:'general', status:'backlog', sprint:null, completedAt:null, dod:[], problemId:p.id, assignee:null});
+    state.tasks.push({id:'TSK-'+String(state.taskSeq).padStart(3,'0'), title:val, description:'', effort:1, category:'general', status:'backlog', sprint:null, completedAt:null, dod:[], problemId:p.id, assignee:null, validated:false});
     inp.value='';
     renderKanban(); saveState();
   });
@@ -1729,6 +1755,10 @@ function finishDrag(){
     const t = state.tasks.find(x=>x.id===dragState.taskId);
     if(t && t.status!==colBody.dataset.col){
       const newStatus = colBody.dataset.col;
+      if(newStatus==='increment' && !t.validated){
+        toast(`${t.id} : cochez "Validé" (revue de sprint) avant de basculer en Increment.`, true);
+        return;
+      }
       const wasFinished = t.status==='done' || t.status==='increment';
       const nowFinished = newStatus==='done' || newStatus==='increment';
       t.status = newStatus;
@@ -1740,7 +1770,7 @@ function finishDrag(){
           toast(`${t.id} déplacée avec ${remaining} critère(s) DoD non coché(s).`);
         }
       }
-      if(!nowFinished && wasFinished) t.completedAt = null;
+      if(!nowFinished){ t.completedAt = null; t.validated = false; }
       saveState();
       renderTrail();
     }
@@ -1785,7 +1815,7 @@ document.addEventListener('pointercancel', e=>{
 
 function cardHtml(t){
   const catLabel = {time:'Temps', security:'Sécurité', dependencies:'Dépendances', general:'Général'}[t.category] || 'Général';
-  const validated = t.status==='increment' ? '<span class="validated-stamp">LIVRÉ</span>' : (t.status==='done' ? '<span class="validated-stamp">VALIDÉ</span>' : '');
+  const stampHtml = t.status==='increment' ? '<span class="validated-stamp">LIVRÉ</span>' : '';
   const dod = t.dod || [];
   const checkedCount = dod.filter(d=>d.checked).length;
   const dodComplete = dod.length>0 && checkedCount===dod.length;
@@ -1793,7 +1823,7 @@ function cardHtml(t){
   const borderColor = prob ? prob.color : 'var(--border-soft)';
   const collabOptions = state.collaborators.map(c=>`<option value="${c.id}" ${t.assignee===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
   return `<div class="card" data-id="${t.id}" style="border-left-color:${borderColor};">
-    ${validated}
+    ${stampHtml}
     <button class="del">×</button>
     <div class="stamp-id">${t.id}${prob ? ` <span style="color:${prob.color};">· ${escapeHtml(prob.name)}</span>` : ''}</div>
     <div class="title">${escapeHtml(t.title)}</div>
@@ -1812,6 +1842,10 @@ function cardHtml(t){
         <option value="__new__">+ Nouveau collaborateur…</option>
       </select>
     </div>
+    ${t.status==='done' ? `<label class="validated-row" data-id="${t.id}">
+      <input type="checkbox" class="validated-checkbox" data-id="${t.id}" ${t.validated?'checked':''}>
+      <span>Validé (revue de sprint)</span>
+    </label>` : ''}
     <div class="dod-toggle" data-task="${t.id}">
       <span class="chev">▸</span>DoD <span class="dod-count ${dodComplete?'complete':''}">${checkedCount}/${dod.length}</span>
     </div>
@@ -1846,10 +1880,17 @@ document.getElementById('btnCloseSprint').addEventListener('click', ()=>{
   if(!as){ toast('Aucun sprint actif.'); return; }
   const doneTasks = state.tasks.filter(t=> t.sprint===as.id && t.status==='done');
   if(doneTasks.length===0){ toast('Aucune tâche "Done" à intégrer à un increment.'); return; }
-  doneTasks.forEach(t=> t.status='increment');
+  const validatedTasks = doneTasks.filter(t=> t.validated);
+  const unvalidatedCount = doneTasks.length - validatedTasks.length;
+  if(validatedTasks.length===0){
+    toast(`Aucun ticket validé (case "Validé") parmi les ${doneTasks.length} en Done — rien à intégrer à l'increment.`, true);
+    return;
+  }
+  validatedTasks.forEach(t=> t.status='increment');
   as.closed = true;
   renderKanban(); saveState(); renderTrail();
-  toast(as.name + ' clôturé. ' + doneTasks.length + ' tâche(s) intégrée(s) à l\'increment.');
+  toast(as.name + ' clôturé. ' + validatedTasks.length + ' tâche(s) validée(s) intégrée(s) à l\'increment.'
+    + (unvalidatedCount>0 ? ` ${unvalidatedCount} ticket(s) Done non validé(s) restent en attente.` : ''));
 });
 
 // ---------------- 5. Calendar ----------------
@@ -2103,7 +2144,7 @@ const CSV_CATEGORY_LABEL = {time:'Temps', security:'Sécurité', dependencies:'D
 const CSV_STATUS_LABEL = {backlog:'Backlog', sprint:'Sprint Backlog', doing:'Doing', done:'Done', increment:'Increment'};
 
 function exportCSV(){
-  const headers = ['ID','Probleme','Titre','Description','Effort','Categorie','Statut','Sprint','Assigne','DoD_coche','DoD_total','Date_completion'];
+  const headers = ['ID','Probleme','Titre','Description','Effort','Categorie','Statut','Sprint','Assigne','Valide','DoD_coche','DoD_total','Date_completion'];
   const lines = [headers.join(',')];
   state.tasks.forEach(t=>{
     const prob = state.problems.find(p=>p.id===t.problemId);
@@ -2112,7 +2153,7 @@ function exportCSV(){
     const row = [
       t.id, prob?prob.name:'', t.title, t.description||'', t.effort,
       CSV_CATEGORY_LABEL[t.category]||t.category, CSV_STATUS_LABEL[t.status]||t.status,
-      t.sprint||'', collab?collab.name:'',
+      t.sprint||'', collab?collab.name:'', t.validated ? 'Oui' : 'Non',
       dod.filter(d=>d.checked).length, dod.length,
       t.completedAt ? t.completedAt.slice(0,10) : ''
     ].map(csvEscape).join(',');
@@ -2167,6 +2208,7 @@ function importCSVFile(file){
     const iStatus = idx('statut');
     const iProblem = idx('probleme')>=0 ? idx('probleme') : idx('problème');
     const iAssignee = idx('assigne')>=0 ? idx('assigne') : idx('assigné');
+    const iValidated = idx('valide')>=0 ? idx('valide') : idx('validé');
 
     const catMap = {'temps':'time','sécurité':'security','securite':'security','dépendances':'dependencies','dependances':'dependencies','général':'general','general':'general'};
     const statusMap = {'backlog':'backlog','sprint backlog':'sprint','sprint':'sprint','doing':'doing','done':'done','increment':'increment'};
@@ -2207,7 +2249,8 @@ function importCSVFile(file){
         effort: nearestFibonacci(iEffort>=0 ? Number(r[iEffort]) : 1),
         category: iCat>=0 ? (catMap[(r[iCat]||'').toLowerCase()] || 'general') : 'general',
         status: iStatus>=0 ? (statusMap[(r[iStatus]||'').toLowerCase()] || 'backlog') : 'backlog',
-        sprint: null, completedAt: null, dod: [], problemId, assignee
+        sprint: null, completedAt: null, dod: [], problemId, assignee,
+        validated: iValidated>=0 ? /^(oui|yes|true|1)$/i.test((r[iValidated]||'').trim()) : false
       });
       imported++;
     }
